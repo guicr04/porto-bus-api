@@ -1,0 +1,458 @@
+make all --print-data-base --no-builtin-variables --no-builtin-rules --question
+# GNU Make 3.81
+# Copyright (C) 2006  Free Software Foundation, Inc.
+# This is free software; see the source for copying conditions.
+# There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.
+
+# This program built for i386-apple-darwin11.3.0
+
+# Make data base, printed on Sun Jul 19 21:32:13 2026
+
+# Variables
+
+# automatic
+<D = $(patsubst %/,%,$(dir $<))
+# automatic
+?F = $(notdir $?)
+# environment
+VSCODE_CRASH_REPORTER_PROCESS_TYPE = extensionHost
+# automatic
+?D = $(patsubst %/,%,$(dir $?))
+# automatic
+@D = $(patsubst %/,%,$(dir $@))
+# automatic
+@F = $(notdir $@)
+# makefile
+CURDIR := /Users/GuilhermeCastroRibeiro/Desktop/porto-bus-api
+# makefile (from `Makefile', line 9)
+SHELL := /bin/bash
+# environment
+VSCODE_NLS_CONFIG = {"userLocale":"en-us","osLocale":"en-us","resolvedLanguage":"en","defaultMessagesFile":"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json","locale":"en-us","availableLanguages":{}}
+# environment
+_ = /usr/bin/make
+# makefile (from `Makefile', line 1)
+MAKEFILE_LIST :=  Makefile
+# environment
+DEBUG = release
+# environment
+MXC_BIN_DIR = /Applications/Visual Studio Code.app/Contents/Resources/app/node_modules.asar.unpacked/@microsoft/mxc-sdk/bin
+# environment
+__CFBundleIdentifier = com.microsoft.VSCode
+# environment
+USER = GuilhermeCastroRibeiro
+# environment
+VSCODE_CWD = /
+# environment
+GSETTINGS_SCHEMA_DIR = /opt/anaconda3/share/glib-2.0/schemas
+# environment
+PATH = /opt/anaconda3/bin:/opt/anaconda3/condabin:/usr/local/opt/bison/bin:/usr/local/opt/flex/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/usr/local/share/dotnet:~/.dotnet/tools:/Library/Frameworks/Mono.framework/Versions/Current/Commands
+# makefile (from `Makefile', line 23)
+WALK = 10
+# makefile (from `Makefile', line 13)
+BASE = http://127.0.0.1:$(PORT)
+# environment
+ELECTRON_RUN_AS_NODE = 1
+# makefile (from `Makefile', line 12)
+PORT = 8000
+# default
+.FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
+# environment
+SSH_AUTH_SOCK = /var/run/com.apple.launchd.mTAYLkb4it/Listeners
+# makefile (from `Makefile', line 19)
+DIRECTION = 0
+# automatic
+%F = $(notdir $%)
+# environment
+CONDA_EXE = /opt/anaconda3/bin/conda
+# environment
+PWD = /Users/GuilhermeCastroRibeiro/Desktop/porto-bus-api
+# environment
+OSLogRateLimit = 64
+# makefile (from `Makefile', line 17)
+STOP = CMO
+# environment
+MANPATH = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/share/man:/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/usr/share/man:/Applications/Xcode.app/Contents/Developer/usr/share/man:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/man:
+# environment
+HOME = /Users/GuilhermeCastroRibeiro
+# default
+MAKEFILEPATH := /Applications/Xcode.app/Contents/Developer/Makefiles
+# environment
+VSCODE_CODE_CACHE_PATH = /Users/GuilhermeCastroRibeiro/Library/Application Support/Code/CachedData/8a7abeba6e03ea3af87bfbce9a1b7e48fed567b8
+# environment
+LOGNAME = GuilhermeCastroRibeiro
+# environment
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = true
+# environment
+CONDA_PROMPT_MODIFIER = (base) 
+# environment
+VSCODE_HANDLES_UNCAUGHT_ERRORS = true
+# automatic
+^D = $(patsubst %/,%,$(dir $^))
+# environment
+CONDA_DEFAULT_ENV = base
+# environment
+XPC_FLAGS = 0x0
+# default
+MAKE = $(MAKE_COMMAND)
+# default
+MAKECMDGOALS := all
+# environment
+SHLVL = 1
+# environment
+VSCODE_ESM_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
+# default
+MAKE_VERSION := 3.81
+# environment
+COPILOT_OTEL_FILE_EXPORTER_PATH = /dev/null
+# makefile (from `Makefile', line 10)
+.DEFAULT_GOAL := help
+# environment
+APPLICATION_INSIGHTS_NO_STATSBEAT = true
+# makefile (from `Makefile', line 24)
+ROWS = 10
+# automatic
+%D = $(patsubst %/,%,$(dir $%))
+# environment
+MACH_PORT_RENDEZVOUS_PEER_VALDATION = 1
+# environment
+CONDA_SHLVL = 1
+# default
+MAKE_COMMAND := /Applications/Xcode.app/Contents/Developer/usr/bin/make
+# default
+.VARIABLES := 
+# environment
+TMPDIR = /var/folders/zb/37fygcn53bs_hpqh97zgyw7c0000gp/T/
+# automatic
+*F = $(notdir $*)
+# environment
+VSCODE_IPC_HOOK = /Users/GuilhermeCastroRibeiro/Library/Application Support/Code/1.12-main.sock
+# environment
+MallocNanoZone = 0
+# makefile
+MAKEFLAGS = Rrqp
+# makefile (from `Makefile', line 18)
+LINE = 300
+# environment
+MFLAGS = -Rrqp
+# automatic
+*D = $(patsubst %/,%,$(dir $*))
+# environment
+NVM_DIR = /Users/GuilhermeCastroRibeiro/.nvm
+# environment
+XPC_SERVICE_NAME = application.com.microsoft.VSCode.169314549.169315142
+# automatic
++D = $(patsubst %/,%,$(dir $+))
+# environment
+VSCODE_L10N_BUNDLE_LOCATION = 
+# automatic
++F = $(notdir $+)
+# environment
+__CF_USER_TEXT_ENCODING = 0x1F6:0x0:0x0
+# environment
+COMMAND_MODE = unix2003
+# default
+MAKEFILES := 
+# automatic
+<F = $(notdir $<)
+# environment
+LC_ALL = C
+# makefile (from `Makefile', line 153)
+PRETTY := $$(command -v python3 >/dev/null && echo "python3 -m json.tool" || echo cat)
+# environment
+CONDA_PYTHON_EXE = /opt/anaconda3/bin/python
+# automatic
+^F = $(notdir $^)
+# default
+SUFFIXES := 
+# default
+.INCLUDE_DIRS = /usr/local/include
+# environment
+MAKELEVEL := 0
+# environment
+CONDA_PREFIX = /opt/anaconda3
+# environment
+VSCODE_PID = 5857
+# environment
+LANG = C
+# variable set hash-table stats:
+# Load=82/1024=8%, Rehash=0, Collisions=10/114=9%
+
+# Pattern-specific Variable Values
+
+# No pattern-specific variable values.
+
+# Directories
+
+# . (device 16777232, inode 169360600): 18 files, no impossibilities.
+
+# 18 files, no impossibilities in 1 directories.
+
+# Implicit Rules
+
+# No implicit rules.
+
+# Files
+
+stop:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 67):
+	@lsof -ti:$(PORT) | xargs -r kill 2>/dev/null && echo "Stopped." || echo "Nothing on port $(PORT)."
+	
+
+setup: node_modules .env
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 40):
+	@echo "Ready. Run 'make dev'."
+	
+
+geocode:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 137):
+	@test -n "$(ADDRESS)" || (echo 'Usage: make geocode ADDRESS="Rua de ..., Porto"'; exit 1)
+	@node scripts/geocode.js "$(ADDRESS)"
+	
+
+reinstall:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 52):
+	rm -rf node_modules package-lock.json
+	npm install
+	
+
+watch-board:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 129):
+	@while true; do \
+	clear; \
+	curl -s "$(BASE)/board.txt?$(if $(LAT),lat=$(LAT)&lon=$(LON)&,)walk_minutes=$(WALK)&limit=$(ROWS)&color=1"; \
+	sleep 30; \
+	done
+	
+
+# Not a target:
+all:
+#  Command-line target.
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has not been updated.
+# variable set hash-table stats:
+# Load=0/32=0%, Rehash=0, Collisions=0/0=0%
+
+.PHONY: help setup reinstall dev start stop test postman smoke board watch-board geocode realtime departures service-id
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+departures:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 146):
+	@curl -s "$(BASE)/stops/$(STOP)/departures?line=$(LINE)" | $(PRETTY)
+	
+
+# Not a target:
+.SUFFIXES:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+service-id:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 150):
+	@curl -s "$(BASE)/lines/$(LINE)/services" | $(PRETTY)
+	
+
+# Not a target:
+Makefile:
+#  Implicit rule search has been done.
+#  Last modified 2026-07-19 21:08:29
+#  File has been updated.
+#  Successfully updated.
+# variable set hash-table stats:
+# Load=0/32=0%, Rehash=0, Collisions=0/0=0%
+
+start: setup
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 63):
+	npm start
+	
+
+test: node_modules
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 73):
+	npm test
+	
+
+.env:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 47):
+	@cp .env.example .env
+	@echo "Created .env from .env.example"
+	
+
+smoke:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 89):
+	@echo "Smoke-testing $(BASE) (stop=$(STOP) line=$(LINE))"
+	@echo
+	@if ! curl -sf --max-time 3 "$(BASE)/health" >/dev/null; then \
+	echo "  No server on $(BASE) — start one with 'make dev' first."; exit 1; \
+	fi
+	@svc=$$(curl -s --max-time 30 "$(BASE)/lines/$(LINE)/services" \
+	| sed -n 's/.*"active_service_id":"\([^"]*\)".*/\1/p'); \
+	echo "  active service_id: $$svc"; echo; \
+	svc_enc=$$(printf '%s' "$$svc" | sed 's/ /%20/g; s/|/%7C/g'); \
+	fail=0; \
+	check() { \
+	code=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$(BASE)$$1"); \
+	if [ "$$code" = "200" ]; then mark="ok  "; else mark="FAIL"; fail=1; fi; \
+	printf "  %s %-3s %s\n" "$$mark" "$$code" "$$1"; \
+	}; \
+	check "/health"; \
+	check "/stops?q=carmo&limit=5"; \
+	check "/stops/$(STOP)"; \
+	check "/stops/$(STOP)/realtime"; \
+	check "/stops/$(STOP)/routes"; \
+	check "/stops/$(STOP)/services"; \
+	check "/stops/$(STOP)/departures?line=$(LINE)"; \
+	check "/stops/$(STOP)/schedule?route_id=$(LINE)&service_id=$$svc_enc&direction_id=$(DIRECTION)"; \
+	check "/lines"; \
+	check "/lines/$(LINE)/stops?direction_id=$(DIRECTION)"; \
+	check "/lines/$(LINE)/shape?direction_id=$(DIRECTION)"; \
+	check "/lines/$(LINE)/services"; \
+	check "/lines/$(LINE)/schedule?service_id=$$svc_enc&direction_id=$(DIRECTION)"; \
+	echo; \
+	if [ $$fail -eq 0 ]; then echo "  All endpoints returned 200."; \
+	else echo "  Some endpoints failed."; exit 1; fi
+	
+
+help:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 28):
+	@echo "Porto Bus API"
+	@echo
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@echo
+	@echo "Vars: PORT=$(PORT) STOP=$(STOP) LINE=$(LINE) DIRECTION=$(DIRECTION) WALK=$(WALK) ROWS=$(ROWS)"
+	@echo "      board: set HOME_LAT/HOME_LON in .env, or pass LAT= LON="
+	
+
+board:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 125):
+	@curl -s "$(BASE)/board.txt?$(if $(LAT),lat=$(LAT)&lon=$(LON)&,)walk_minutes=$(WALK)&limit=$(ROWS)&color=1"
+	
+
+# Not a target:
+package.json:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+dev: setup
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 59):
+	npm run dev
+	
+
+# Not a target:
+.DEFAULT:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+realtime:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 142):
+	@curl -s "$(BASE)/stops/$(STOP)/realtime" | $(PRETTY)
+	
+
+postman:
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 77):
+	@if ! curl -sf --max-time 3 "$(BASE)/health" >/dev/null; then \
+	echo "No server on $(BASE) — start one with 'make dev' first."; exit 1; \
+	fi
+	npx --yes newman run postman/porto-bus-api.postman_collection.json \
+	--env-var baseUrl=$(BASE) \
+	--env-var stopCode=$(STOP) \
+	--env-var line=$(LINE) \
+	--env-var directionId=$(DIRECTION) \
+	--reporters cli --reporter-cli-no-banner
+	
+
+node_modules: package.json
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 43):
+	npm install
+	@touch node_modules
+	
+
+# files hash-table stats:
+# Load=23/1024=2%, Rehash=0, Collisions=2/70=3%
+# VPATH Search Paths
+
+# No `vpath' search paths.
+
+# No general (`VPATH' variable) search path.
+
+# # of strings in strcache: 1
+# # of strcache buffers: 1
+# strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
+# strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
+
+# Finished Make data base on Sun Jul 19 21:32:13 2026
+
+ 
+make: *** No rule to make target `all'.  Stop.
+

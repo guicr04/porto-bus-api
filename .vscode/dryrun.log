@@ -1,0 +1,11 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory `/Users/GuilhermeCastroRibeiro/Desktop/porto-bus-api'
+echo "Porto Bus API"
+echo
+grep -hE '^[a-zA-Z_-]+:.*?## .*$'  Makefile \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $1, $2}'
+echo
+echo "Vars: PORT=8000 STOP=CMO LINE=300 DIRECTION=0 WALK=10 ROWS=10"
+echo "      board: set HOME_LAT/HOME_LON in .env, or pass LAT= LON="
+make: Leaving directory `/Users/GuilhermeCastroRibeiro/Desktop/porto-bus-api'
+ 

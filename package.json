@@ -1,0 +1,20 @@
+{
+  "name": "porto-bus-api",
+  "version": "0.1.0",
+  "description": "A personal wrapper API around Porto's STCP bus system.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

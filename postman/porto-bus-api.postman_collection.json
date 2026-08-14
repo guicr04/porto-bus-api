@@ -1,0 +1,1549 @@
+{
+  "info": {
+    "_postman_id": "b3f1c7a2-9d54-4e6b-8a10-2c5f7e9d4a11",
+    "name": "Porto Bus API (local)",
+    "description": "Every endpoint of the local Porto Bus API, plus the error cases.\n\n## Before you start\nRun the API with `make dev` (it listens on http://127.0.0.1:8000).\n\n## Variables\n- `baseUrl` – where the API is running\n- `stopCode` – default `CMO` (CARMO)\n- `line` – default `300`\n- `directionId` – `0` or `1`\n- `serviceId` – **captured automatically**, see below\n- `today` – set to today's date on every request by a collection-level script\n\n## About serviceId\nThe two `schedule` endpoints need a GTFS `service_id` such as\n`DOM|FERIADO:FLUXO 3.1 20260718`. It changes with the timetable, and it is matched\nexactly upstream, so typing it by hand is error-prone.\n\nYou don't have to: run **Lines → Get services for a line** (or **Stops → Get services\nat a stop**) once, and its test script stores today's active service into the\n`serviceId` collection variable. Every schedule request then just works.\n\nRunning the whole collection top-to-bottom does this for you — the services requests\ncome before the schedule ones on purpose.\n\n## Two data sources\nRequests are labelled by where the data comes from: **GTFS** (the official static\nfeed) or **live** (stcp.pt's own JSON API). `departures` is the only one that merges\nboth.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Keep a YYYY-MM-DD 'today' variable available to any request that wants a date.",
+          "const d = new Date();",
+          "const pad = (n) => String(n).padStart(2, '0');",
+          "pm.collectionVariables.set('today', `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Applies to every request. The board's text representation is deliberately",
+          "// not JSON, so key off the content type rather than asserting blindly.",
+          "const contentType = pm.response.headers.get('Content-Type') || '';",
+          "if (contentType.includes('application/json')) {",
+          "    pm.test('responds with JSON', function () {",
+          "        pm.response.to.be.json;",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "stopCode",
+      "value": "CMO",
+      "type": "string"
+    },
+    {
+      "key": "line",
+      "value": "300",
+      "type": "string"
+    },
+    {
+      "key": "directionId",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "serviceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "today",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lat",
+      "value": "41.147223",
+      "type": "string"
+    },
+    {
+      "key": "lon",
+      "value": "-8.616926",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness check. Touches no upstream — if this fails, the server isn't running."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status field is ok', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Stops",
+      "item": [
+        {
+          "name": "List stops (GTFS)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops?limit=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "1-2000, default 100"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "case-insensitive name filter",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "All stops from the official GTFS feed.\n\nThe **first** call after startup downloads and parses the feed, so expect a few seconds; everything afterwards is served from memory until the TTL expires (a week by default)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns an array of stops', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.be.an('array').that.is.not.empty;",
+                  "    pm.expect(body[0]).to.have.all.keys('stop_code', 'name', 'lat', 'lon');",
+                  "});",
+                  "pm.test('honours limit', () => {",
+                  "    pm.expect(pm.response.json().length).to.be.at.most(25);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search stops by name (GTFS)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops?q=carmo&limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "carmo",
+                  "description": "substring match on stop name"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Substring search on the stop name, case-insensitive."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('every result matches the query', () => {",
+                  "    pm.response.json().forEach((s) => {",
+                  "        pm.expect(s.name.toLowerCase()).to.include('carmo');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get one stop (GTFS)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}"
+              ]
+            },
+            "description": "One stop's code, name and coordinates."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has coordinates', () => {",
+                  "    const s = pm.response.json();",
+                  "    pm.expect(s.stop_code).to.eql(pm.collectionVariables.get('stopCode'));",
+                  "    pm.expect(s.lat).to.be.a('number');",
+                  "    pm.expect(s.lon).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Live arrivals board (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/realtime",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "realtime"
+              ]
+            },
+            "description": "The live board — what STCP's own site shows at the stop.\n\nEach arrival carries `arrival_minutes`, `estimated_arrival_time`, `status`, `delay_minutes` and the line's real colour.\n\nNote `arrivals` can legitimately be **empty** late at night, which is not an error."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has an arrivals array', () => {",
+                  "    pm.expect(pm.response.json().arrivals).to.be.an('array');",
+                  "});",
+                  "",
+                  "// Only assert on shape when there is something to assert on:",
+                  "// an empty board is normal outside service hours.",
+                  "const arrivals = pm.response.json().arrivals;",
+                  "if (arrivals.length) {",
+                  "    pm.test('arrivals have the documented shape', () => {",
+                  "        pm.expect(arrivals[0]).to.include.keys(",
+                  "            'line', 'destination', 'arrival_minutes',",
+                  "            'estimated_arrival_time', 'status', 'delay_minutes', 'color');",
+                  "    });",
+                  "} else {",
+                  "    console.log('Empty board — normal outside service hours.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Routes serving a stop (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "routes"
+              ]
+            },
+            "description": "Two lists, because upstream returns two:\n\n- `routes` — the lines at this stop, **no direction info**, and only a coarse family colour (`#187EC2` for nearly every city line).\n- `directions` — the same lines *with* `direction_id`, `direction_name` and `trip_headsign`.\n\nA line appears in `directions` once per stop, with the direction that actually serves it, so looking up direction by line id is unambiguous."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has both routes and directions', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.routes).to.be.an('array');",
+                  "    pm.expect(b.directions).to.be.an('array');",
+                  "});",
+                  "pm.test('directions carry a direction_id', () => {",
+                  "    const d = pm.response.json().directions;",
+                  "    if (d.length) pm.expect(d[0].direction_id).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get services at a stop — today (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{today}}",
+                  "description": "YYYY-MM-DD, defaults to today",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Which GTFS calendars (`service_id`) apply at this stop — e.g. weekday, Saturday, Sunday/holiday.\n\n**Heads-up:** the `monday`…`sunday` flags come back all-zero from upstream for every service. That's their bug, not ours — use `is_active_today`, which is correct.\n\nThis request stores the active service into the `serviceId` variable."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const services = pm.response.json().services || [];",
+                  "pm.test('returns services', () => pm.expect(services).to.be.an('array').that.is.not.empty);",
+                  "",
+                  "// Capture today's active service so the schedule requests need no manual copy-paste.",
+                  "const active = services.find((s) => s.is_active_today);",
+                  "if (active) {",
+                  "    pm.collectionVariables.set('serviceId', active.service_id);",
+                  "    console.log('serviceId set to:', active.service_id);",
+                  "} else {",
+                  "    console.warn('No service flagged active_today at this stop.');",
+                  "}",
+                  "",
+                  "pm.test('exactly one service is active today', () => {",
+                  "    pm.expect(services.filter((s) => s.is_active_today).length).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get services at a stop — specific date (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/services?date={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{today}}",
+                  "description": "YYYY-MM-DD"
+                }
+              ]
+            },
+            "description": "Same as above but for an explicit date. Swap `{{today}}` for e.g. `2026-12-25` to see the holiday calendar."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combined departures — live + scheduled",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/departures?line={{line}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "departures"
+              ],
+              "query": [
+                {
+                  "key": "line",
+                  "value": "{{line}}",
+                  "description": "REQUIRED"
+                }
+              ]
+            },
+            "description": "**The one that matters for a UI.** \"When's my bus\" for one line at one stop.\n\nLive arrivals for the near term, the timetable for everything after, in one list sorted by time. Every entry is tagged `source: \"realtime\" | \"scheduled\"` so a frontend can render a live pill differently from a faded scheduled time.\n\nDuplicates are removed using `delay_minutes`: a bus estimated 18:43 running 5 late *is* the 18:38 slot, so the scheduled 18:38 is dropped rather than shown alongside it.\n\nDirection and colour are detected automatically; `service_id` defaults to today's active one."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const deps = body.departures || [];",
+                  "",
+                  "pm.test('echoes the resolved context', () => {",
+                  "    pm.expect(body.stop_code).to.eql(pm.collectionVariables.get('stopCode'));",
+                  "    pm.expect(body.line).to.eql(pm.collectionVariables.get('line'));",
+                  "    pm.expect(body).to.have.property('direction_id');",
+                  "    pm.expect(body).to.have.property('service_id');",
+                  "});",
+                  "",
+                  "pm.test('every departure is tagged with its source', () => {",
+                  "    deps.forEach((d) => pm.expect(d.source).to.be.oneOf(['realtime', 'scheduled']));",
+                  "});",
+                  "",
+                  "pm.test('departures are sorted by time', () => {",
+                  "    const etas = deps.map((d) => d.eta_minutes);",
+                  "    pm.expect(etas).to.eql([...etas].sort((a, b) => a - b));",
+                  "});",
+                  "",
+                  "pm.test('no departure is in the past', () => {",
+                  "    deps.forEach((d) => pm.expect(d.eta_minutes).to.be.at.least(0));",
+                  "});",
+                  "",
+                  "pm.test('one line renders in one colour', () => {",
+                  "    const colours = new Set(deps.map((d) => d.color).filter(Boolean));",
+                  "    pm.expect(colours.size).to.be.at.most(1);",
+                  "});",
+                  "",
+                  "// A late bus and its own timetable slot must not both appear.",
+                  "pm.test('no live bus duplicates its scheduled slot', () => {",
+                  "    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };",
+                  "    const slots = deps",
+                  "        .filter((d) => d.source === 'realtime' && d.delay_minutes !== null)",
+                  "        .map((d) => Math.round(toMin(d.time) - d.delay_minutes));",
+                  "    deps.filter((d) => d.source === 'scheduled').forEach((d) => {",
+                  "        slots.forEach((slot) => {",
+                  "            pm.expect(Math.abs(slot - toMin(d.time)),",
+                  "                `scheduled ${d.time} duplicates a live bus`).to.be.above(1);",
+                  "        });",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combined departures — all parameters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/departures?line={{line}}&direction_id={{directionId}}&service_id={{serviceId}}&window_minutes=3&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "departures"
+              ],
+              "query": [
+                {
+                  "key": "line",
+                  "value": "{{line}}",
+                  "description": "REQUIRED"
+                },
+                {
+                  "key": "direction_id",
+                  "value": "{{directionId}}",
+                  "description": "override auto-detection"
+                },
+                {
+                  "key": "service_id",
+                  "value": "{{serviceId}}",
+                  "description": "override today's active service"
+                },
+                {
+                  "key": "window_minutes",
+                  "value": "3",
+                  "description": "dedup tolerance, only used when delay is unknown"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "default 10"
+                }
+              ]
+            },
+            "description": "Same endpoint with every optional parameter set explicitly.\n\nRun a **services** request first so `{{serviceId}}` is populated.\n\n`window_minutes` is now only a fallback: when an arrival reports `delay_minutes`, duplicates are matched exactly against the recovered scheduled slot instead."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('respects limit', () => {",
+                  "    pm.expect(pm.response.json().departures.length).to.be.at.most(20);",
+                  "});",
+                  "pm.test('uses the direction we asked for', () => {",
+                  "    pm.expect(String(pm.response.json().direction_id))",
+                  "        .to.eql(pm.collectionVariables.get('directionId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Timetable at a stop (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/schedule?route_id={{line}}&service_id={{serviceId}}&direction_id={{directionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "schedule"
+              ],
+              "query": [
+                {
+                  "key": "route_id",
+                  "value": "{{line}}",
+                  "description": "REQUIRED"
+                },
+                {
+                  "key": "service_id",
+                  "value": "{{serviceId}}",
+                  "description": "REQUIRED — run a services request first"
+                },
+                {
+                  "key": "direction_id",
+                  "value": "{{directionId}}",
+                  "description": "default 0"
+                }
+              ]
+            },
+            "description": "The printed timetable for one line at one stop, for a given service and direction. Pure schedule — no live data.\n\nTimes come back as `HH:MM:SS` and can exceed 24h (`24:35:00` means 00:35 the next day)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('serviceId')) {",
+                  "    console.warn('serviceId is empty — run a services request first.');",
+                  "}",
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns departures', () => {",
+                  "    pm.expect(pm.response.json().departures).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Lines",
+      "item": [
+        {
+          "name": "List all lines (GTFS)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines"
+              ]
+            },
+            "description": "Every line in the GTFS feed.\n\nNote: this endpoint takes **no** parameters — it always returns the full list."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns lines with a route_id', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.be.an('array').that.is.not.empty;",
+                  "    pm.expect(body[0]).to.have.all.keys('line', 'description', 'route_id');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get services for a line — today (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{today}}",
+                  "description": "YYYY-MM-DD, defaults to today",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "**Run this first.** Unlike the stop version, this one hands you `active_service_id` directly, and its test script stores it in `{{serviceId}}` for the schedule requests.\n\nNote the payload differs from the stop version: `services` here is a plain array of strings."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('services is an array of strings', () => {",
+                  "    pm.expect(body.services).to.be.an('array');",
+                  "    if (body.services.length) pm.expect(body.services[0]).to.be.a('string');",
+                  "});",
+                  "",
+                  "pm.test('reports an active service for today', () => {",
+                  "    pm.expect(body.active_service_id).to.be.a('string').that.is.not.empty;",
+                  "});",
+                  "",
+                  "if (body.active_service_id) {",
+                  "    pm.collectionVariables.set('serviceId', body.active_service_id);",
+                  "    console.log('serviceId set to:', body.active_service_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get services for a line — specific date (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/services?date={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{today}}",
+                  "description": "YYYY-MM-DD"
+                }
+              ]
+            },
+            "description": "Same, for an explicit date. Try a Sunday or a public holiday to see the calendar change."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordered stops for a direction (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/stops?direction_id={{directionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "stops"
+              ],
+              "query": [
+                {
+                  "key": "direction_id",
+                  "value": "{{directionId}}",
+                  "description": "0 or 1, default 0"
+                }
+              ]
+            },
+            "description": "The full ordered stop list for one direction — first to last, with `sequence` and coordinates. This is what you'd draw a route strip from."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const stops = pm.response.json().stops;",
+                  "pm.test('returns stops with coordinates', () => {",
+                  "    pm.expect(stops).to.be.an('array').that.is.not.empty;",
+                  "    pm.expect(stops[0]).to.include.keys('stop_id', 'stop_name', 'lat', 'lon', 'sequence');",
+                  "});",
+                  "",
+                  "pm.test('sequence increases monotonically', () => {",
+                  "    const seq = stops.map((s) => s.sequence);",
+                  "    pm.expect(seq).to.eql([...seq].sort((a, b) => a - b));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordered stops — opposite direction (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/stops?direction_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "stops"
+              ],
+              "query": [
+                {
+                  "key": "direction_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Direction 1 — the return leg.\n\nCircular lines (the default `300` is one) only really have direction 0, so this may come back empty. That's the data, not a failure; try a bidirectional line such as `200`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const stops = pm.response.json().stops;",
+                  "if (!stops || !stops.length) {",
+                  "    console.log('No stops for direction 1 — expected on a circular line.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Route shape / map polyline (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/shape?direction_id={{directionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "shape"
+              ],
+              "query": [
+                {
+                  "key": "direction_id",
+                  "value": "{{directionId}}",
+                  "description": "0 or 1, default 0"
+                }
+              ]
+            },
+            "description": "The polyline the bus physically follows — hundreds of `{lat, lng, sequence}` points, for drawing the route on a map.\n\nNote the key is `lng`, not `lon` as in the stop payloads."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns coordinates', () => {",
+                  "    const c = pm.response.json().coordinates;",
+                  "    pm.expect(c).to.be.an('array').that.is.not.empty;",
+                  "    pm.expect(c[0]).to.have.all.keys('lat', 'lng', 'sequence');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Full timetable grid (live)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/schedule?service_id={{serviceId}}&direction_id={{directionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "schedule"
+              ],
+              "query": [
+                {
+                  "key": "service_id",
+                  "value": "{{serviceId}}",
+                  "description": "REQUIRED — run 'Get services for a line' first"
+                },
+                {
+                  "key": "direction_id",
+                  "value": "{{directionId}}",
+                  "description": "0 or 1, default 0"
+                }
+              ]
+            },
+            "description": "The whole printed timetable for a direction: every trip against the line's timepoint stops — the grid you see on a bus shelter."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('serviceId')) {",
+                  "    console.warn('serviceId is empty — run \"Get services for a line\" first.');",
+                  "}",
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Board (desk display)",
+      "description": "The departure board for a location: everything you can still catch on foot, ordered by arrival.\n\nSet `lat`/`lon` here, or set HOME_LAT/HOME_LON in .env and omit them.",
+      "item": [
+        {
+          "name": "Board — JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board?lat={{lat}}&lon={{lon}}&walk_minutes=10&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{lat}}",
+                  "description": "omit to use HOME_LAT"
+                },
+                {
+                  "key": "lon",
+                  "value": "{{lon}}",
+                  "description": "omit to use HOME_LON"
+                },
+                {
+                  "key": "walk_minutes",
+                  "value": "10",
+                  "description": "walking budget, default 10"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "rows, default 10"
+                },
+                {
+                  "key": "max_stops",
+                  "value": "12",
+                  "description": "how many stops to poll, default 12",
+                  "disabled": true
+                },
+                {
+                  "key": "buffer",
+                  "value": "0",
+                  "description": "minutes of slack before departure",
+                  "disabled": true
+                },
+                {
+                  "key": "include_unreachable",
+                  "value": "true",
+                  "description": "keep buses you can no longer catch",
+                  "disabled": true
+                },
+                {
+                  "key": "collapse",
+                  "value": "false",
+                  "description": "show every stop option per line",
+                  "disabled": true
+                },
+                {
+                  "key": "walk_speed",
+                  "value": "75",
+                  "description": "metres per minute",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "eta",
+                  "description": "'line' (default) or 'eta'",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "What the device's firmware (or an app) consumes.\n\nRows are ordered **by line number** (numerically: 1, 1M, 90, 200, 906, ZC), not by arrival. Pass `sort=eta` for a time-ordered board.\n\n`walk_minutes` and `leave_in_minutes` are still in the JSON even though the text view no longer prints them — the walk is what decides which buses make the board at all. Rows you can't reach in time are filtered out by default.\n\n`stops_truncated` tells you whether `max_stops` stopped us polling everything in range, so a thin board can be read as 'we didn't look everywhere' rather than 'nothing runs'.\n\nEach row carries **`realtime`** — true when STCP is actually tracking buses at that stop, false when it has fallen back to projecting from the timetable (`data_source` holds the raw upstream label). This is the field a display should key its colour off; the text view prints live times green."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test('reports what it polled', () => {",
+                  "    pm.expect(b.stops_polled).to.be.an('array');",
+                  "    pm.expect(b).to.have.property('stops_considered');",
+                  "    pm.expect(b).to.have.property('stops_truncated');",
+                  "});",
+                  "",
+                  "pm.test('every departure is reachable on foot', () => {",
+                  "    b.departures.forEach((d) => {",
+                  "        pm.expect(d.catchable, `${d.line} to ${d.destination}`).to.be.true;",
+                  "        pm.expect(d.leave_in_minutes).to.be.at.least(0);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('leave_in equals eta minus the walk', () => {",
+                  "    b.departures.forEach((d) => {",
+                  "        pm.expect(d.leave_in_minutes).to.eql(d.eta_minutes - d.walk_minutes);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('ordered by line, numerically', () => {",
+                  "    const lineNum = (s) => {",
+                  "        const m = String(s).match(/^\\d+/);",
+                  "        return m ? Number(m[0]) : Infinity;  // lettered lines sort last",
+                  "    };",
+                  "    const nums = b.departures.map((d) => lineNum(d.line));",
+                  "    pm.expect(nums).to.eql([...nums].sort((x, y) => x - y));",
+                  "});",
+                  "",
+                  "pm.test('no duplicate line+destination (collapse is on)', () => {",
+                  "    const keys = b.departures.map((d) => `${d.line} ${d.destination}`);",
+                  "    pm.expect(new Set(keys).size).to.eql(keys.length);",
+                  "});",
+                  "",
+                  "pm.test('walking distance respects the budget', () => {",
+                  "    b.stops_polled.forEach((s) => pm.expect(s.walk_minutes).to.be.at.most(10));",
+                  "});",
+                  "pm.test('every row says whether it is live-tracked', () => {",
+                  "    b.departures.forEach((d) => pm.expect(d.realtime).to.be.a('boolean'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board — text for the display",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board.txt?lat={{lat}}&lon={{lon}}&title=BEDROOM&width=42&limit=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board.txt"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{lat}}"
+                },
+                {
+                  "key": "lon",
+                  "value": "{{lon}}"
+                },
+                {
+                  "key": "title",
+                  "value": "BEDROOM",
+                  "description": "header line, defaults to HOME_LABEL"
+                },
+                {
+                  "key": "width",
+                  "value": "42",
+                  "description": "character width, default 42"
+                },
+                {
+                  "key": "limit",
+                  "value": "8"
+                },
+                {
+                  "key": "color",
+                  "value": "1",
+                  "description": "ANSI-green the live times (terminal only)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Fixed-width `text/plain`, ready to push straight at an LED matrix or a small display — no JSON parser needed on the device.\n\nColumns: line, destination, minutes until arrival (`9m`). Ordered by line.\n\nCurl it directly to see what the display would show.\n\n`color=1` wraps live times in ANSI green — useful in a terminal, but off by default: a microcontroller driving an LED panel wants the `realtime` flag from `/board`, not escape codes it would have to strip.\n\nColour is applied after padding, so the fixed column width holds either way."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('served as plain text', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/plain');",
+                  "});",
+                  "pm.test('rows are padded to the requested width', () => {",
+                  "    const rows = pm.response.text().split('\\n').filter((l) => l.length);",
+                  "    rows.forEach((r) => pm.expect(r.length).to.eql(42));",
+                  "});",
+                  "pm.test('shows no walking column', () => {",
+                  "    pm.expect(pm.response.text()).to.not.match(/\\dw\\s/);",
+                  "});",
+                  "pm.test('plain by default — no escape codes for the device to strip', () => {",
+                  "    pm.expect(pm.response.text()).to.not.include('\\u001b');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board — text, live times in green",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board.txt?lat={{lat}}&lon={{lon}}&color=1&limit=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board.txt"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{lat}}"
+                },
+                {
+                  "key": "lon",
+                  "value": "{{lon}}"
+                },
+                {
+                  "key": "color",
+                  "value": "1",
+                  "description": "ANSI-green the live times"
+                },
+                {
+                  "key": "limit",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "Same board with ANSI colour on: times STCP is actively tracking are printed green, timetable projections stay plain.\n\nPostman shows the escape codes literally — `curl` it, or `make board`, to see the colour. The assertion below checks the padding still lines up once the escapes are stripped."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const rows = pm.response.text().split('\\n').filter((l) => l.length);",
+                  "",
+                  "pm.test('escape codes do not break the column width', () => {",
+                  "    rows.forEach((r) => {",
+                  "        const visible = r.replace(/\\u001b\\[\\d+m/g, '');",
+                  "        pm.expect(visible.length).to.eql(42);",
+                  "    });",
+                  "});",
+                  "",
+                  "// Green is only correct if the data really is live — if STCP had fallen back to",
+                  "// the timetable, these rows should be plain, so this is informational not fatal.",
+                  "const coloured = rows.filter((r) => r.includes('\\u001b[32m')).length;",
+                  "console.log(`${coloured} of ${rows.length} rows are live-tracked (green).`);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board — include unreachable buses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board?lat={{lat}}&lon={{lon}}&include_unreachable=true&collapse=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{lat}}"
+                },
+                {
+                  "key": "lon",
+                  "value": "{{lon}}"
+                },
+                {
+                  "key": "include_unreachable",
+                  "value": "true"
+                },
+                {
+                  "key": "collapse",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Diagnostic view: keeps buses arriving sooner than you could walk there (flagged `catchable: false`, negative `leave_in_minutes`) and stops collapsing duplicate stop options.\n\nUseful for sanity-checking the walking model against what you know of the area."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('unreachable rows carry a negative leave_in', () => {",
+                  "    pm.response.json().departures.filter((d) => !d.catchable)",
+                  "        .forEach((d) => pm.expect(d.leave_in_minutes).to.be.below(0));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board — a 5 minute walk only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board?lat={{lat}}&lon={{lon}}&walk_minutes=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{lat}}"
+                },
+                {
+                  "key": "lon",
+                  "value": "{{lon}}"
+                },
+                {
+                  "key": "walk_minutes",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Tighter radius — fewer stops, and each row's `walk_minutes` must be within the budget."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nothing outside the 5 minute budget', () => {",
+                  "    pm.response.json().departures",
+                  "        .forEach((d) => pm.expect(d.walk_minutes).to.be.at.most(5));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error cases",
+      "description": "The failure modes worth knowing, so you can tell a bug from expected behaviour.",
+      "item": [
+        {
+          "name": "Departures without line → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/departures",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "departures"
+              ]
+            },
+            "description": "`line` is required — omitting it is a client error, not a 500."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('explains what is missing', () => {",
+                  "    pm.expect(pm.response.json().detail).to.include('line');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stop schedule without required params → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/{{stopCode}}/schedule?route_id={{line}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "{{stopCode}}",
+                "schedule"
+              ],
+              "query": [
+                {
+                  "key": "route_id",
+                  "value": "{{line}}"
+                }
+              ]
+            },
+            "description": "`route_id` **and** `service_id` are both required here."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('names both required params', () => {",
+                  "    const d = pm.response.json().detail;",
+                  "    pm.expect(d).to.include('route_id');",
+                  "    pm.expect(d).to.include('service_id');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Line schedule without service_id → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/{{line}}/schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "{{line}}",
+                "schedule"
+              ]
+            },
+            "description": "`service_id` is required."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the missing param', () => {",
+                  "    pm.expect(pm.response.json().detail).to.include('service_id');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown stop → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stops/NOPE123",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "NOPE123"
+              ]
+            },
+            "description": "A stop code that isn't in the GTFS feed."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('says which stop was not found', () => {",
+                  "    pm.expect(pm.response.json().detail).to.include('NOPE123');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown line schedule → upstream error (502)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lines/ZZZ999/schedule?service_id={{serviceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lines",
+                "ZZZ999",
+                "schedule"
+              ],
+              "query": [
+                {
+                  "key": "service_id",
+                  "value": "{{serviceId}}"
+                }
+              ]
+            },
+            "description": "A nonexistent line. We can't validate line ids ourselves, so this surfaces as whatever upstream says — typically a 502 from our error handler, sometimes a 200 with an empty grid.\n\nThis request documents that ambiguity rather than asserting one specific code."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('does not return a 500', () => {",
+                  "    pm.expect(pm.response.code).to.not.eql(500);",
+                  "});",
+                  "console.log('Unknown line responded with', pm.response.code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board with no origin -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/board?lat=&lon=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "board"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": ""
+                },
+                {
+                  "key": "lon",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "With no lat/lon and no HOME_LAT/HOME_LON configured, the board explains how to set an origin rather than guessing one.\n\nIf you *have* set HOME_LAT/HOME_LON in .env this returns 200 instead — the test allows both."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const code = pm.response.code;",
+                  "pm.test('either answers or explains itself', () => {",
+                  "    pm.expect(code).to.be.oneOf([200, 400]);",
+                  "});",
+                  "if (code === 400) {",
+                  "    pm.test('tells you how to set an origin', () => {",
+                  "        pm.expect(pm.response.json().detail).to.include('HOME_LAT');",
+                  "    });",
+                  "} else {",
+                  "    console.log('HOME_LAT/HOME_LON are set, so the board answered.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
