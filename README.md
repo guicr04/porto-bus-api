@@ -90,7 +90,14 @@ Three more quirks confirmed against the live API (July 2026):
   (or `active_service_id` on the line endpoint) — it *is* correct.
 - **Two different colours for the same line.** The routes endpoints return a coarse
   family colour (`#187EC2` for essentially every city line), while the realtime board
-  returns the line's real colour (300 → `#417DBD`). Prefer the realtime one.
+  returns the line's real colour (300 → `#417DBD`). Prefer the realtime one where a
+  live context exists — but `/lines` has no live context at all (it's a global list,
+  not tied to a stop), so it exposes the coarse GTFS colour instead (`color` /
+  `text_color`, from `routes.txt`'s `route_color`/`route_text_color`, normalised to
+  `#RRGGBB`). That coarse colour still varies meaningfully: confirmed against the
+  live feed, city lines share `#187EC2`, the **M-family is genuinely black**
+  (`#000000`), and e.g. line 701 is red (`#FF0000`) — it's a family colour, not a
+  useless one.
 
 These endpoints are undocumented (no contract/SLA) — cache politely, don't hammer.
 
@@ -148,7 +155,7 @@ porto-bus-api/
 | GET    | `/stops/{code}/routes`        | live   | routes serving a stop           |
 | GET    | `/stops/{code}/services?date=`| live   | service_ids running that day    |
 | GET    | `/stops/{code}/schedule`      | live   | timetable (route+service+dir)   |
-| GET    | `/lines`                      | GTFS   | list all lines                  |
+| GET    | `/lines`                      | GTFS   | list all lines, incl. `color`/`text_color` |
 | GET    | `/lines/{line}/stops?direction_id=`   | live | ordered stops for a direction |
 | GET    | `/lines/{line}/shape?direction_id=`   | live | map polyline for a direction  |
 | GET    | `/lines/{line}/services?date=`        | live | service_ids running that day  |
@@ -231,10 +238,22 @@ number ascending, suffixed variants after their bare number, lettered lines last
 
 `?sort=eta` gives the time-ordered board instead.
 
-Note the two-step: rows are ranked by *arrival* first, so collapsing keeps the
-soonest bus per line and `limit` keeps the next N buses — only then are they
-re-sorted by line. Sorting by line up front would instead show the N
-lowest-numbered lines whenever they happen to run.
+Note the two-step: rows are ranked by *arrival* first, so `limit` keeps the next
+N buses — only then are they re-sorted by line. Sorting by line up front would
+instead show the N lowest-numbered lines whenever they happen to run.
+
+**Collapsing a line to several nearby stops picks the closest stop, not the
+soonest bus.** Earlier behaviour kept whichever stop's raw ETA read lowest —
+but two stops close together on the same route often report the *same*
+physical bus a minute or two apart (a real case: line 701 read 13 min at a
+stop 471 m away and 14 min at a stop 317 m away — one minute of tracking
+noise), and picking by raw ETA sent riders to the farther stop for no reason.
+Now the collapse compares `walk_minutes` (falling back to `distance_meters`,
+then `eta_minutes`, to break exact ties) and keeps the nearer stop
+unconditionally — even when a farther-but-still-reachable stop has a
+meaningfully sooner bus on the same line. That trade-off is deliberate: this
+reports what's coming to *your* nearest stop for a line, not the earliest bus
+catchable from anywhere nearby.
 
 ### Why the walk still matters (even though it isn't shown)
 A bus arriving in 3 minutes at a stop 6 minutes away is not a departure — it's
@@ -366,6 +385,11 @@ buses that duplicate their own timetable slot. Run headlessly with `make postman
 - [x] Tests for the merge logic (`test/combine.test.js`).
 - [x] Nearest-stops-to-me + departure board (`/board`, `/board.txt`).
 - [x] Short-TTL cache on live arrivals.
+- [x] `color`/`text_color` on `/lines`, from GTFS `route_color`/`route_text_color`.
+- [x] Board's line collapse picks the closest stop, not the soonest raw ETA.
+- [ ] `GET /lines/{line}/vehicles` — infer vehicle positions from `trip_id` across
+      a line's stops, for a live map. Needed by the iOS app's Map tab; see that
+      repo's `DESIGN.md` §11.1 for the full design.
 - [ ] `/journey?to=` — the Siri "how do I get there" case (needs transfers).
 - [ ] Firmware for the display itself (polls `/board.txt`).
 - [ ] `limit` is currently ignored on `/lines` — honour it (or drop it from the docs).

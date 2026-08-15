@@ -27,6 +27,9 @@ export interface Line {
   description: string;
   /** internal GTFS route id */
   route_id: string;
+  /** official GTFS route_color, e.g. "#187EC2"; most city lines share one family colour */
+  color: string | null;
+  text_color: string | null;
 }
 
 // ---- live arrivals: /stops/{code}/realtime --------------------------------

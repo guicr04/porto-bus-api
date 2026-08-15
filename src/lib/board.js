@@ -63,22 +63,44 @@ export function buildBoard({
 
   if (!includeUnreachable) rows = rows.filter((r) => r.catchable);
 
-  // Order by arrival first, whatever the caller asked for. Collapsing below keeps
-  // the *first* row it sees per line, so it needs the soonest bus to come first —
-  // sorting by line up here would make "which option survives" arbitrary.
+  // Order by arrival first, whatever the caller asked for.
   rows.sort((a, b) => a.eta_minutes - b.eta_minutes || a.walk_minutes - b.walk_minutes);
 
   if (collapse) {
-    // The same line often serves several stops within walking distance, and the
-    // same bus then appears once per stop. Keep only the soonest option for each
-    // line+destination — on a small display the duplicates are pure noise.
-    const seen = new Set();
-    rows = rows.filter((r) => {
+    // The same line+direction often serves several stops within walking
+    // distance. Show one row: the option that takes the least walking, not
+    // whichever stop's tracked ETA happened to read lowest. A bus a few
+    // minutes further out at the nearer stop is still the better choice than
+    // walking past it for a marginally sooner ping at a farther one — and two
+    // stops close together on the same route frequently report the *same*
+    // physical bus a minute or two apart, so "soonest ETA" was often really
+    // just tracking noise deciding which stop won.
+    //
+    // Trade-off, accepted deliberately: this reports what's coming to *your*
+    // nearest stop for a line, not "the earliest bus you could catch from
+    // anywhere nearby". If a farther-but-still-reachable stop has a
+    // meaningfully sooner bus on the same line+direction, that option is not
+    // shown — only the nearest stop's arrival is.
+    const best = new Map(); // key -> current best row
+    for (const r of rows) {
       const key = `${r.line} ${r.destination}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+      const current = best.get(key);
+      if (
+        !current ||
+        r.walk_minutes < current.walk_minutes ||
+        (r.walk_minutes === current.walk_minutes && r.distance_meters < current.distance_meters) ||
+        (r.walk_minutes === current.walk_minutes &&
+          r.distance_meters === current.distance_meters &&
+          r.eta_minutes < current.eta_minutes)
+      ) {
+        best.set(key, r);
+      }
+    }
+
+    rows = [...best.values()];
+    // The winner per key may no longer be the soonest-inserted row, so restore
+    // arrival order before the trim/sort below.
+    rows.sort((a, b) => a.eta_minutes - b.eta_minutes || a.walk_minutes - b.walk_minutes);
   }
 
   // Trim before the final sort: "the next N buses, listed by line", rather than

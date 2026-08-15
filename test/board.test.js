@@ -7,6 +7,14 @@ import assert from 'node:assert/strict';
 import { haversineMeters, walkMinutes, stopsWithinWalk } from '../src/lib/geo.js';
 import { buildBoard, renderBoard, compareLines } from '../src/lib/board.js';
 import { pickStopsToPoll } from '../src/services/board.js';
+import { toHexColor } from '../src/clients/gtfs.js';
+
+test('GTFS bare hex colours are normalised to #-prefixed, matching every other colour field', () => {
+  assert.equal(toHexColor('187EC2'), '#187EC2');
+  assert.equal(toHexColor('#000000'), '#000000'); // already prefixed: not doubled
+  assert.equal(toHexColor(''), null);
+  assert.equal(toHexColor(undefined), null);
+});
 
 // CARMO and ALIADOS, two real Porto stops about 500 m apart.
 const CARMO = { stop_code: 'CMO', name: 'CARMO', lat: 41.147223, lon: -8.616926 };
@@ -131,7 +139,11 @@ test('a buffer makes the cut-off stricter', () => {
   assert.equal(buildBoard({ stops, buffer: 3 }).length, 0);
 });
 
-test('the same line at two nearby stops collapses to the soonest option', () => {
+test('the same line at two nearby stops collapses to the closer one, even with a later ETA', () => {
+  // CMO is the shorter walk (2 min) but its bus takes longer to arrive (20 min)
+  // than ALD's (12 min, 5 min walk). The board still reports CMO: it shows
+  // what's coming to *your* nearest stop for the line, not the earliest bus
+  // catchable from anywhere nearby.
   const rows = buildBoard({
     stops: [
       atStop(2, [arrival({ arrival_minutes: 20 })], 'CMO'),
@@ -140,7 +152,40 @@ test('the same line at two nearby stops collapses to the soonest option', () => 
   });
 
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].stop_code, 'ALD'); // the 12-minute one wins
+  assert.equal(rows[0].stop_code, 'CMO'); // closer stop wins despite the later ETA
+});
+
+test('the closer stop wins by walk time even when the farther stop is a much sooner bus', () => {
+  // Real case this pins: a 701 read 13 min at a stop 471m/9min-walk away and
+  // 14 min at a stop 317m/6min-walk away — the same physical bus a minute of
+  // tracking noise apart. Picking by raw ETA sent riders to the farther stop
+  // for no reason; distance now decides, not the noisy ETA.
+  const rows = buildBoard({
+    stops: [
+      atStop(9, [arrival({ arrival_minutes: 13 })], 'FAR'), // 471m -> 9 min walk
+      atStop(6, [arrival({ arrival_minutes: 14 })], 'NEAR'), // 317m -> 6 min walk
+    ],
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].stop_code, 'NEAR');
+});
+
+test('closer-stop-wins is unconditional: it holds even far outside "same bus" range', () => {
+  // The accepted trade-off, made explicit: NEAR's bus is 14 minutes further
+  // out than FAR's, and both are still catchable — but NEAR is still what's
+  // shown, because it's the nearest stop for this line. FAR's much sooner bus
+  // is not surfaced.
+  const rows = buildBoard({
+    stops: [
+      atStop(2, [arrival({ arrival_minutes: 25 })], 'NEAR'),
+      atStop(9, [arrival({ arrival_minutes: 11 })], 'FAR'),
+    ],
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].stop_code, 'NEAR');
+  assert.equal(rows[0].eta_minutes, 25);
 });
 
 test('collapse:false keeps every stop option', () => {
@@ -201,13 +246,14 @@ test('line ordering is numeric, not alphabetic', () => {
   assert.deepEqual(sorted, ['1', '1M', '10M', '90', '200', '906', 'ZC']);
 });
 
-test('the soonest bus per line survives, then rows are re-sorted by line', () => {
+test('the closer stop per line survives, then rows are re-sorted by line', () => {
   // Ordering by line must not change *which* option is kept: line 500 should
-  // still resolve to its 6-minute bus, not the 20-minute one.
+  // still resolve to its closer, 2-min-walk stop and its 20-minute bus, not
+  // the farther 3-min-walk stop's sooner 6-minute one.
   const rows = buildBoard({
     stops: [
-      atStop(2, [arrival({ line: '500', arrival_minutes: 20 })], 'FAR'),
-      atStop(3, [arrival({ line: '500', arrival_minutes: 6 })], 'NEAR'),
+      atStop(2, [arrival({ line: '500', arrival_minutes: 20 })], 'CLOSE'),
+      atStop(3, [arrival({ line: '500', arrival_minutes: 6 })], 'FARTHER'),
       atStop(1, [arrival({ line: '200', arrival_minutes: 12 })], 'S3'),
     ],
   });
@@ -216,7 +262,7 @@ test('the soonest bus per line survives, then rows are re-sorted by line', () =>
     rows.map((r) => [r.line, r.eta_minutes]),
     [
       ['200', 12],
-      ['500', 6],
+      ['500', 20],
     ],
   );
 });

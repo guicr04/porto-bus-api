@@ -29,6 +29,19 @@ function toFloat(v) {
   return Number.isNaN(n) ? null : n;
 }
 
+/**
+ * GTFS gives route_color as bare hex ("187EC2"); every other colour field in
+ * this API (the live feed's route_color, /stops/:code/routes) comes back
+ * already `#`-prefixed. Normalise so callers never have to special-case which
+ * endpoint they got a colour from. Exported for unit testing — everything
+ * else in this file needs the live GTFS feed, but this doesn't.
+ * @param {string} v @returns {string | null}
+ */
+export function toHexColor(v) {
+  const trimmed = (v || '').trim();
+  return trimmed ? `#${trimmed.replace(/^#/, '')}` : null;
+}
+
 function isStale() {
   return Date.now() - cache.loadedAt > config.gtfsTtlSeconds * 1000;
 }
@@ -132,6 +145,8 @@ function parseRoutes(text) {
       line: short || routeId,
       description: (row.route_long_name || '').trim(),
       route_id: routeId,
+      color: toHexColor(row.route_color),
+      text_color: toHexColor(row.route_text_color),
     };
     lines.set(routeId, line);
     if (short) byShort.set(short, line);
