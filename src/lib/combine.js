@@ -63,6 +63,7 @@ export function mergeDepartures({
       delay_minutes: a.delay_minutes,
       color: a.color ?? color,
       text_color: a.text_color ?? textColor,
+      trip_id: a.trip_id ?? null,
       _min: min,
     });
   }
@@ -102,6 +103,10 @@ export function mergeDepartures({
       delay_minutes: null,
       color,
       text_color: textColor,
+      // Only the store-backed scheduled rows know their trip; upstream's
+      // timetable is times and headsigns only. Null here is normal, and the
+      // client resolves those by pattern instead (README §4c).
+      trip_id: d.trip_id ?? null,
       _min: schedMin,
     });
   }

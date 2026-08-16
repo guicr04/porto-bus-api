@@ -72,6 +72,10 @@ stop: ## Kill whatever is listening on PORT
 test: node_modules ## Run the unit tests
 	npm test
 
+.PHONY: gtfs
+gtfs: node_modules ## Rebuild the static GTFS store from the newest published feed
+	npm run gtfs:refresh
+
 .PHONY: postman
 postman: ## Run the Postman collection headlessly (needs a running server)
 	@if ! curl -sf --max-time 3 "$(BASE)/health" >/dev/null; then \

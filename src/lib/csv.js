@@ -7,68 +7,93 @@
  * @returns {Record<string, string>[]}
  */
 export function parseCsv(text) {
-  const rows = parseRows(text);
-  if (rows.length === 0) return [];
-  const header = rows[0].map((h) => h.replace(/^\uFEFF/, '').trim()); // strip BOM
-  const out = [];
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
+  return [...iterCsv(text)];
+}
+
+/**
+ * The same parse, yielded one row at a time.
+ *
+ * This exists for `stop_times.txt`: 850k rows and 50 MB of text, where
+ * materialising the whole `string[][]` plus an object per row costs over a
+ * gigabyte for no reason — the ingest consumes each row once and drops it.
+ * Everything smaller can keep using `parseCsv`.
+ *
+ * @param {string} text
+ * @returns {Generator<Record<string, string>>}
+ */
+export function* iterCsv(text) {
+  /** @type {string[] | null} */
+  let header = null;
+  for (const row of iterRows(text)) {
+    if (header === null) {
+      header = row.map((h) => h.replace(/^\uFEFF/, '').trim()); // strip BOM
+      continue;
+    }
     if (row.length === 1 && row[0] === '') continue; // skip blank lines
     /** @type {Record<string, string>} */
     const obj = {};
     for (let c = 0; c < header.length; c++) obj[header[c]] = row[c] ?? '';
-    out.push(obj);
+    yield obj;
   }
-  return out;
 }
 
 /**
+ * Row tokenizer. Unquoted fields — which is almost every field in GTFS — are
+ * taken with one `slice` rather than accumulated a character at a time; over
+ * 50 MB that difference is minutes, not milliseconds. Quoted fields fall back
+ * to character accumulation, since escaped quotes have to be unescaped.
+ *
  * @param {string} text
- * @returns {string[][]}
+ * @returns {Generator<string[]>}
  */
-function parseRows(text) {
-  const rows = [];
-  let field = '';
+function* iterRows(text) {
+  const len = text.length;
+  let i = 0;
+  /** @type {string[]} */
   let row = [];
-  let inQuotes = false;
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  while (i < len) {
+    let field;
 
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
+    if (text[i] === '"') {
+      i++; // opening quote
+      field = '';
+      while (i < len) {
+        const ch = text[i];
+        if (ch === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i += 2;
+            continue;
+          }
+          i++; // closing quote
+          break;
         }
-      } else {
         field += ch;
+        i++;
       }
+    } else {
+      const start = i;
+      while (i < len) {
+        const ch = text[i];
+        if (ch === ',' || ch === '\n' || ch === '\r') break;
+        i++;
+      }
+      field = text.slice(start, i);
+    }
+
+    row.push(field);
+
+    // Whatever ended the field decides whether the row continues.
+    if (i < len && text[i] === ',') {
+      i++;
       continue;
     }
+    while (i < len && text[i] === '\r') i++;
+    if (i < len && text[i] === '\n') i++;
+    yield row;
+    row = [];
+  }
 
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      field = '';
-      row = [];
-    } else if (ch === '\r') {
-      // ignore; \n handles the line break
-    } else {
-      field += ch;
-    }
-  }
-  // last field / row (if file doesn't end with newline)
-  if (field !== '' || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
+  if (row.length > 0) yield row;
 }

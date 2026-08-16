@@ -20,7 +20,12 @@ export async function getJson(path) {
       signal: controller.signal,
     });
     if (!resp.ok) {
-      throw new Error(`stcp.pt returned ${resp.status} for ${path}`);
+      // The status is carried on the error, not just in the message: the GTFS
+      // fallback has to tell "STCP is unwell" (fall back) from "this stop does
+      // not exist" (propagate — never fabricate a board for it).
+      const err = new Error(`stcp.pt returned ${resp.status} for ${path}`);
+      err.status = resp.status;
+      throw err;
     }
     return await resp.json();
   } finally {

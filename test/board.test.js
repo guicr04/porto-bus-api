@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { haversineMeters, walkMinutes, stopsWithinWalk } from '../src/lib/geo.js';
 import { buildBoard, renderBoard, compareLines } from '../src/lib/board.js';
 import { pickStopsToPoll } from '../src/services/board.js';
-import { toHexColor } from '../src/clients/gtfs.js';
+import { toHexColor } from '../src/lib/color.js';
 
 test('GTFS bare hex colours are normalised to #-prefixed, matching every other colour field', () => {
   assert.equal(toHexColor('187EC2'), '#187EC2');

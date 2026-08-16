@@ -7,6 +7,7 @@
  */
 import * as gtfs from '../clients/gtfs.js';
 import * as stcp from '../clients/stcp.js';
+import * as live from './live.js';
 import { stopsWithinWalk, haversineMeters } from '../lib/geo.js';
 import { buildBoard } from '../lib/board.js';
 
@@ -101,7 +102,7 @@ export async function locationBoard({
   const boards = await Promise.all(
     polled.map(async (stop) => {
       try {
-        const rt = await stcp.stopRealtime(stop.stop_code);
+        const rt = await live.stopBoard(stop.stop_code);
         // data_source tells us whether STCP is tracking buses at this stop or has
         // fallen back to the timetable; the board marks tracked times differently.
         return { stop, arrivals: rt.arrivals ?? [], dataSource: rt.data_source };

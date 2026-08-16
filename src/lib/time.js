@@ -60,3 +60,25 @@ export function isoToLisbonClock(iso) {
     hour12: false,
   }).format(d);
 }
+
+/**
+ * Today's date in Europe/Lisbon as GTFS writes it: "YYYYMMDD".
+ *
+ * Must be Lisbon rather than the host's timezone — the store is keyed by
+ * service date, and a server running in UTC would flip days an hour early in
+ * summer, quietly serving tomorrow's timetable.
+ *
+ * @param {Date} [now]
+ * @param {number} [dayOffset] e.g. -1 for yesterday
+ * @returns {string}
+ */
+export function lisbonDateStamp(now = new Date(), dayOffset = 0) {
+  const shifted = new Date(now.getTime() + dayOffset * 86400000);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Lisbon',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(shifted);
+  return parts.replace(/-/g, '');
+}

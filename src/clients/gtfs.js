@@ -1,187 +1,165 @@
 /**
- * GTFS client.
+ * GTFS client — static data, read from the local store (README §2a).
  *
- * Downloads the official STCP GTFS zip from Porto's open-data portal and keeps a
- * parsed copy in memory (stops + routes), refreshed after a TTL. GTFS is the
- * static source of truth: stops, lines, coordinates. Stable and legal to use.
+ * This file used to download and parse the feed itself, keeping stops and routes
+ * in two in-memory Maps behind a TTL. It no longer downloads anything: the whole
+ * feed is ingested into SQLite by scripts/gtfs-refresh.js, and this is a thin
+ * read layer over it.
+ *
+ * The exported surface is deliberately unchanged from the in-memory version, so
+ * that swapping the storage again (SQLite -> Postgres, the day this runs as more
+ * than one instance) stays a change to this one file.
  *
  * @typedef {import('../../types/domain').Stop} Stop
  * @typedef {import('../../types/domain').Line} Line
  */
-import AdmZip from 'adm-zip';
-import { config } from '../config.js';
-import { parseCsv } from '../lib/csv.js';
+import { getDb, getFeedMeta } from '../db/index.js';
 
-/** @type {{ loadedAt: number, sourceUrl: string | null, sourceName: string | null, stops: Map<string, Stop>, lines: Map<string, Line>, linesByShort: Map<string, Line> }} */
-const cache = {
-  loadedAt: 0,
-  sourceUrl: null,
-  sourceName: null,
-  stops: new Map(),
-  lines: new Map(),
-  linesByShort: new Map(),
-};
+export { toHexColor } from '../lib/color.js';
 
-/** @param {string} v @returns {number | null} */
-function toFloat(v) {
-  if (v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  return Number.isNaN(n) ? null : n;
+/** @param {Record<string, any>} row @returns {Stop} */
+function toStop(row) {
+  return {
+    stop_code: row.stop_code,
+    name: row.name,
+    lat: row.lat ?? null,
+    lon: row.lon ?? null,
+  };
 }
 
-/**
- * GTFS gives route_color as bare hex ("187EC2"); every other colour field in
- * this API (the live feed's route_color, /stops/:code/routes) comes back
- * already `#`-prefixed. Normalise so callers never have to special-case which
- * endpoint they got a colour from. Exported for unit testing — everything
- * else in this file needs the live GTFS feed, but this doesn't.
- * @param {string} v @returns {string | null}
- */
-export function toHexColor(v) {
-  const trimmed = (v || '').trim();
-  return trimmed ? `#${trimmed.replace(/^#/, '')}` : null;
+/** @param {Record<string, any>} row @returns {Line} */
+function toLine(row) {
+  return {
+    line: row.short_name || row.route_id,
+    description: row.long_name ?? '',
+    route_id: row.route_id,
+    color: row.color ?? null,
+    text_color: row.text_color ?? null,
+  };
 }
-
-function isStale() {
-  return Date.now() - cache.loadedAt > config.gtfsTtlSeconds * 1000;
-}
-
-async function ensureLoaded() {
-  if (cache.stops.size > 0 && !isStale()) return;
-  await load();
-}
-
-/**
- * Ask the portal's CKAN API for the newest GTFS zip.
- *
- * The dataset accumulates one resource per publication (55+ and counting), each
- * with its own UUID, so we sort by last_modified and take the freshest rather
- * than trusting any fixed URL.
- *
- * @returns {Promise<string>} download URL
- */
-async function resolveLatestGtfsUrl() {
-  const url =
-    `${config.gtfsPortalBase}/api/3/action/package_show` +
-    `?id=${encodeURIComponent(config.gtfsDatasetId)}`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs);
-  try {
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': config.userAgent, Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!resp.ok) throw new Error(`GTFS dataset lookup returned ${resp.status}`);
-    const body = await resp.json();
-
-    const resources = (body?.result?.resources ?? []).filter(
-      (r) => ['GTFS', 'ZIP'].includes(String(r?.format ?? '').toUpperCase()) && r?.url,
-    );
-    if (resources.length === 0) throw new Error('GTFS dataset has no zip resources');
-
-    resources.sort((a, b) =>
-      String(a.last_modified ?? a.created ?? '').localeCompare(String(b.last_modified ?? b.created ?? '')),
-    );
-    const latest = resources[resources.length - 1];
-    cache.sourceName = latest.name ?? null;
-    return latest.url;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function load() {
-  const gtfsUrl = config.gtfsUrl ?? (await resolveLatestGtfsUrl());
-  cache.sourceUrl = gtfsUrl;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs * 3); // zip is bigger
-  let buf;
-  try {
-    const resp = await fetch(gtfsUrl, {
-      headers: { 'User-Agent': config.userAgent },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    if (!resp.ok) throw new Error(`GTFS download returned ${resp.status}`);
-    buf = Buffer.from(await resp.arrayBuffer());
-  } finally {
-    clearTimeout(timer);
-  }
-
-  const zip = new AdmZip(buf);
-  parseStops(zip.readAsText('stops.txt'));
-  parseRoutes(zip.readAsText('routes.txt'));
-  cache.loadedAt = Date.now();
-}
-
-/** @param {string} text */
-function parseStops(text) {
-  const stops = new Map();
-  for (const row of parseCsv(text)) {
-    const code = (row.stop_code || row.stop_id || '').trim();
-    if (!code) continue;
-    stops.set(code, {
-      stop_code: code,
-      name: (row.stop_name || '').trim(),
-      lat: toFloat(row.stop_lat),
-      lon: toFloat(row.stop_lon),
-    });
-  }
-  cache.stops = stops;
-}
-
-/** @param {string} text */
-function parseRoutes(text) {
-  const lines = new Map();
-  const byShort = new Map();
-  for (const row of parseCsv(text)) {
-    const routeId = (row.route_id || '').trim();
-    if (!routeId) continue;
-    const short = (row.route_short_name || '').trim();
-    /** @type {Line} */
-    const line = {
-      line: short || routeId,
-      description: (row.route_long_name || '').trim(),
-      route_id: routeId,
-      color: toHexColor(row.route_color),
-      text_color: toHexColor(row.route_text_color),
-    };
-    lines.set(routeId, line);
-    if (short) byShort.set(short, line);
-  }
-  cache.lines = lines;
-  cache.linesByShort = byShort;
-}
-
-// ---- public API -----------------------------------------------------------
 
 /** @returns {Promise<Stop[]>} */
 export async function getStops() {
-  await ensureLoaded();
-  return [...cache.stops.values()];
+  return getDb().prepare('SELECT stop_code, name, lat, lon FROM stops ORDER BY stop_code').all().map(toStop);
 }
 
 /** @param {string} stopCode @returns {Promise<Stop | null>} */
 export async function getStop(stopCode) {
-  await ensureLoaded();
-  return cache.stops.get(stopCode) ?? null;
+  const row = getDb()
+    .prepare('SELECT stop_code, name, lat, lon FROM stops WHERE stop_code = ?')
+    .get(stopCode);
+  return row ? toStop(row) : null;
+}
+
+/**
+ * Stops inside a bounding box, for the map. This is the reason `stops(lat, lon)`
+ * is indexed: it turns "every stop on screen" into an index range scan instead
+ * of a filter over all 2,568 rows, and means a client never has to hold the
+ * whole network in memory to draw part of it.
+ *
+ * @param {{ minLat: number, minLon: number, maxLat: number, maxLon: number }} box
+ * @param {number} [limit]
+ * @returns {Promise<Stop[]>}
+ */
+export async function getStopsInBBox(box, limit = 2000) {
+  return getDb()
+    .prepare(
+      'SELECT stop_code, name, lat, lon FROM stops' +
+        ' WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?' +
+        ' ORDER BY stop_code LIMIT ?',
+    )
+    .all(box.minLat, box.maxLat, box.minLon, box.maxLon, limit)
+    .map(toStop);
+}
+
+/**
+ * Which lines serve each stop inside a box.
+ *
+ * One query for the whole visible region, rather than one request per stop:
+ * the map labels pins with line numbers at close zoom, and 15 round trips to
+ * draw one screen would be indefensible. Cheap because `stop_routes` is
+ * precomputed at ingest (README §2a).
+ *
+ * @param {{ minLat: number, minLon: number, maxLat: number, maxLon: number }} box
+ * @returns {Promise<Array<{ stop_code: string, lines: Array<{ line: string, color: string | null, text_color: string | null }> }>>}
+ */
+export async function getStopLinesInBBox(box) {
+  const rows = getDb()
+    .prepare(
+      // COALESCE, not short_name: a handful of routes carry no route_short_name,
+      // and a null here would be a badge with nothing written on it — or, for a
+      // client whose model says the line is a String, a decode failure that
+      // takes the whole region's labels down.
+      'SELECT sr.stop_code, COALESCE(r.short_name, r.route_id) AS line, r.color, r.text_color' +
+        ' FROM stop_routes sr JOIN routes r ON r.route_id = sr.route_id' +
+        ' WHERE sr.stop_code IN (SELECT stop_code FROM stops' +
+        '   WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?)' +
+        ' ORDER BY sr.stop_code, r.sort_order, r.short_name',
+    )
+    .all(box.minLat, box.maxLat, box.minLon, box.maxLon);
+
+  /** @type {Map<string, any[]>} */
+  const byStop = new Map();
+  for (const r of rows) {
+    if (!byStop.has(r.stop_code)) byStop.set(r.stop_code, []);
+    byStop.get(r.stop_code).push({
+      line: r.line,
+      color: r.color ?? null,
+      text_color: r.text_color ?? null,
+    });
+  }
+  return [...byStop].map(([stop_code, lines]) => ({ stop_code, lines }));
+}
+
+/**
+ * Free-text search on stop name. Case-insensitive for ASCII via SQLite's LIKE;
+ * Porto's stop names are upper-case in the feed, so that is enough.
+ * @param {string} query @param {number} [limit] @returns {Promise<Stop[]>}
+ */
+export async function searchStops(query, limit = 100) {
+  return getDb()
+    .prepare(
+      'SELECT stop_code, name, lat, lon FROM stops WHERE name LIKE ? ORDER BY stop_code LIMIT ?',
+    )
+    .all(`%${query}%`, limit)
+    .map(toStop);
 }
 
 /** @returns {Promise<Line[]>} */
 export async function getLines() {
-  await ensureLoaded();
-  return [...cache.lines.values()];
+  return getDb()
+    .prepare('SELECT route_id, short_name, long_name, color, text_color FROM routes ORDER BY sort_order, short_name')
+    .all()
+    .map(toLine);
+}
+
+/**
+ * One line by its rider-facing short name ("500"), falling back to route_id.
+ * @param {string} shortName @returns {Promise<Line | null>}
+ */
+export async function getLine(shortName) {
+  const db = getDb();
+  const sql = 'SELECT route_id, short_name, long_name, color, text_color FROM routes WHERE ';
+  const row =
+    db.prepare(`${sql}short_name = ?`).get(shortName) ?? db.prepare(`${sql}route_id = ?`).get(shortName);
+  return row ? toLine(row) : null;
 }
 
 /** Which feed we're actually serving, for /health and debugging. */
 export function getFeedInfo() {
+  const db = getDb();
+  const meta = getFeedMeta();
+  const count = (t) => Number(db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()?.n ?? 0);
   return {
-    source_name: cache.sourceName,
-    source_url: cache.sourceUrl,
-    loaded_at: cache.loadedAt ? new Date(cache.loadedAt).toISOString() : null,
-    stops: cache.stops.size,
-    lines: cache.lines.size,
+    source_name: meta?.resource_name ?? null,
+    source_url: meta?.source_url ?? null,
+    feed_version: meta?.feed_version ?? null,
+    feed_start_date: meta?.feed_start_date ?? null,
+    feed_end_date: meta?.feed_end_date ?? null,
+    loaded_at: meta?.ingested_at ?? null,
+    stops: count('stops'),
+    lines: count('routes'),
+    trips: count('trips'),
+    stop_times: count('stop_times'),
   };
 }

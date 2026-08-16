@@ -13,7 +13,14 @@ export const config = {
   gtfsUrl: process.env.GTFS_URL || null,
   gtfsPortalBase: (process.env.GTFS_PORTAL_BASE ?? 'https://opendata.porto.digital').replace(/\/$/, ''),
   gtfsDatasetId: process.env.GTFS_DATASET_ID ?? 'horarios-paragens-e-rotas-em-formato-gtfs-stcp',
-  gtfsTtlSeconds: Number(process.env.GTFS_TTL_SECONDS ?? 60 * 60 * 24 * 7), // one week
+  // Daily, not weekly. The feed's own validity window is ~18 days and the portal
+  // republishes every 2-3 days, so a week-long TTL can leave the store holding a
+  // timetable that expired days ago (README §2a).
+  gtfsTtlSeconds: Number(process.env.GTFS_TTL_SECONDS ?? 60 * 60 * 24),
+
+  // The static store. A derived artifact — safe to delete, rebuilt by
+  // `npm run gtfs:refresh` or automatically at boot when missing or stale.
+  dbPath: process.env.DB_PATH ?? 'data/gtfs.db',
 
   // Modern stcp.pt public JSON API (what the website itself calls)
   stcpApiBase: (process.env.STCP_API_BASE ?? 'https://stcp.pt/api').replace(/\/$/, ''),

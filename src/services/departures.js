@@ -5,8 +5,10 @@
  * @typedef {import('../../types/domain').StopLineDepartures} StopLineDepartures
  */
 import * as stcp from '../clients/stcp.js';
+import * as live from './live.js';
+import { scheduledDepartures, activeServiceIds } from '../db/schedule.js';
 import { mergeDepartures } from '../lib/combine.js';
-import { lisbonNowMinutes } from '../lib/time.js';
+import { lisbonNowMinutes, lisbonDateStamp } from '../lib/time.js';
 
 /**
  * @param {string} stopCode
@@ -24,17 +26,24 @@ export async function stopLineDepartures(stopCode, line, opts = {}) {
 
   // Fetch the live board, the stop's routes (for direction + colour), and the
   // day's services (for the active service_id) in parallel.
+  //
+  // Only the board is load-bearing: it comes through the fallback seam, so it is
+  // live or timetable but never absent. The other two are decoration — direction,
+  // colour, service_id — and an outage on either degrades a detail rather than
+  // the answer, so they resolve to null instead of taking the request down.
   const [realtime, routes, services] = await Promise.all([
-    stcp.stopRealtime(stopCode),
-    stcp.stopRoutes(stopCode),
-    opts.serviceId ? Promise.resolve(null) : stcp.stopServices(stopCode),
+    live.stopBoard(stopCode),
+    stcp.stopRoutes(stopCode).catch(rethrowUnlessOutage),
+    opts.serviceId ? Promise.resolve(null) : stcp.stopServices(stopCode).catch(rethrowUnlessOutage),
   ]);
+
+  const degraded = realtime.data_source === 'scheduled';
 
   // Which direction does this line run at this stop? Prefer the per-direction
   // "directions" list; fall back to the caller's override.
   const routeMeta =
-    routes.directions.find((r) => r.route_id === line) ??
-    routes.routes.find((r) => r.route_id === line) ??
+    routes?.directions.find((r) => r.route_id === line) ??
+    routes?.routes.find((r) => r.route_id === line) ??
     null;
   const directionId = opts.directionId ?? routeMeta?.direction_id ?? 0;
 
@@ -48,12 +57,40 @@ export async function stopLineDepartures(stopCode, line, opts = {}) {
   const color = liveSample?.color ?? routeMeta?.color ?? null;
   const textColor = liveSample?.text_color ?? routeMeta?.text_color ?? null;
 
-  const serviceId = opts.serviceId ?? services?.active_service_id ?? null;
+  // The store knows today's service too, and unlike upstream it still knows it
+  // during an outage.
+  const serviceId =
+    opts.serviceId ?? services?.active_service_id ?? activeServiceIds(lisbonDateStamp())[0] ?? null;
 
-  // Scheduled fallback (only if we have a service_id to ask for).
-  const scheduled = serviceId
-    ? (await stcp.stopSchedule(stopCode, line, serviceId, directionId)).departures
-    : [];
+  // The scheduled half. Upstream while it's healthy — it can reflect short-term
+  // changes the fortnightly GTFS zip doesn't — and the store once it isn't.
+  let scheduled = [];
+  if (degraded) {
+    scheduled = scheduledDepartures(stopCode, { line, windowMinutes: 120, limit: limit * 2 }).map(
+      (d) => ({
+        departure_time: `${d.clock}:00`,
+        arrival_time: `${d.clock}:00`,
+        headsign: d.destination,
+        direction_id: d.direction_id ?? directionId,
+        trip_id: d.trip_id,
+      }),
+    );
+  } else if (serviceId) {
+    try {
+      scheduled = (await stcp.stopSchedule(stopCode, line, serviceId, directionId)).departures;
+    } catch (err) {
+      if (!live.isUpstreamOutage(err)) throw err;
+      scheduled = scheduledDepartures(stopCode, { line, windowMinutes: 120, limit: limit * 2 }).map(
+        (d) => ({
+          departure_time: `${d.clock}:00`,
+          arrival_time: `${d.clock}:00`,
+          headsign: d.destination,
+          direction_id: d.direction_id ?? directionId,
+          trip_id: d.trip_id,
+        }),
+      );
+    }
+  }
 
   const departures = mergeDepartures({
     realtime: liveForLine,
@@ -72,6 +109,20 @@ export async function stopLineDepartures(stopCode, line, opts = {}) {
     direction_id: directionId,
     service_id: serviceId,
     generated_at: new Date().toISOString(),
+    // "scheduled" here means the whole view is timetable-only because STCP was
+    // unreachable — distinct from an individual row's `source`, which is about
+    // whether that one bus is tracked.
+    data_source: degraded ? 'scheduled' : 'realtime',
     departures,
   };
+}
+
+/**
+ * Swallow an upstream outage (the caller has a store-backed path), re-throw
+ * anything that means the request itself was wrong.
+ * @param {Error & { status?: number }} err
+ */
+function rethrowUnlessOutage(err) {
+  if (!live.isUpstreamOutage(err)) throw err;
+  return null;
 }

@@ -221,6 +221,14 @@ export interface CombinedDeparture {
   delay_minutes: number | null;  // realtime only
   color: string | null;
   text_color: string | null;
+  /**
+   * The trip behind this departure, when it is known. Always set on realtime
+   * rows; null on scheduled ones unless they came from the store, because
+   * upstream's timetable is times and headsigns only. A client that wants the
+   * journey for a departure with no id asks `/trips/stops` with the hints
+   * instead of `/trips/{trip_id}/stops`.
+   */
+  trip_id: string | null;
 }
 
 export interface StopLineDepartures {
@@ -286,4 +294,61 @@ export interface LocationBoard {
   /** the subset actually polled (capped by max_stops) */
   stops_polled: PolledStop[];
   departures: BoardRow[];
+}
+
+
+// ==========================================================================
+// One live bus's whole journey: /trips/{trip_id}/stops
+// ==========================================================================
+
+/**
+ * A stop on a resolved trip. Extends the schedule-grid `TripStop` with the two
+ * things a client doing arithmetic needs: the stop_code it speaks elsewhere,
+ * and seconds-since-midnight so it never has to parse "24:35:00" itself.
+ */
+export interface ResolvedTripStop extends TripStop {
+  stop_code: string;
+  /** may exceed 86400 for the after-midnight tail of a trip */
+  arrival_seconds: number;
+  departure_seconds: number;
+  timepoint: boolean;
+}
+
+/**
+ * How the live `trip_id` was matched to a trip in the store. Descending
+ * confidence — a client should be readier to hide projected times the further
+ * down this list it gets. See README §2a.
+ */
+export type TripMatch =
+  /** ids were equal: the store's feed version is what STCP is serving */
+  | 'exact'
+  /** equal once the feed-version field was dropped, and unambiguous */
+  | 'version'
+  /** version-stripped match that the day's service could not narrow; newest feed version won */
+  | 'version_latest'
+  /** the id missed entirely; matched on line + headsign + nearest scheduled departure */
+  | 'pattern';
+
+export interface ResolvedTrip {
+  /** the store's id for this trip */
+  trip_id: string;
+  /** the id as asked for, i.e. the live one; null when asked for by pattern */
+  requested_trip_id: string | null;
+  match: TripMatch;
+  route_id: string;
+  /** route_short_name, e.g. "601" */
+  line: string | null;
+  color: string | null;
+  text_color: string | null;
+  headsign: string | null;
+  direction_id: number | null;
+  service_id: string;
+  shape_id: string | null;
+  /**
+   * True when the ingested feed is past its validity window. The stop order is
+   * still trustworthy; the minute-gaps between them are from a timetable STCP
+   * has already moved past.
+   */
+  feed_expired: boolean;
+  stops: ResolvedTripStop[];
 }

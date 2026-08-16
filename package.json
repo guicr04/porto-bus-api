@@ -5,12 +5,13 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node --test \"test/*.test.js\""
+    "start": "node --experimental-sqlite src/index.js",
+    "dev": "node --experimental-sqlite --watch src/index.js",
+    "test": "node --experimental-sqlite --test \"test/*.test.js\"",
+    "gtfs:refresh": "node --experimental-sqlite scripts/gtfs-refresh.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.5"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
