@@ -376,6 +376,13 @@ class ApiIntegrationTest {
     assertThat(body.path("upstream").path("open").asBoolean()).isFalse();
   }
 
+  @Test
+  void thePublishedOpenApiContractUsesTheSameFieldNamesAsTheWire() throws Exception {
+    JsonNode arrival = get("/v3/api-docs").json().path("components").path("schemas").path("Arrival").path("properties");
+    assertThat(arrival.has("arrival_minutes")).isTrue();
+    assertThat(arrival.has("arrivalMinutes")).isFalse();
+  }
+
   /** A request line sent verbatim, for characters java.net.URI refuses to build. */
   String rawStatusLine(String pathAndQuery) throws Exception {
     try (Socket socket = new Socket("127.0.0.1", port)) {
