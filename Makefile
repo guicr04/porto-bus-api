@@ -1,16 +1,17 @@
 # Porto Bus API — common tasks.
 #
-#   make setup    install deps + create .env
-#   make dev      run with auto-reload
+#   make setup    create .env
+#   make dev      run from source
 #   make smoke    hit every endpoint once, print status codes
 #
-# Run `make` on its own for the full list.
+# Run `make` on its own for the full list. Needs JDK 25; Maven comes with ./mvnw.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 PORT ?= 8000
 BASE ?= http://127.0.0.1:$(PORT)
+JAR  := target/porto-bus-api.jar
 
 # Defaults used by the smoke test / curl helpers. Override on the command line:
 #   make realtime STOP=BOLH
@@ -36,45 +37,42 @@ help: ## Show this help
 # ---- setup -----------------------------------------------------------------
 
 .PHONY: setup
-setup: node_modules .env ## Install dependencies and create .env
+setup: .env ## Create .env from .env.example
 	@echo "Ready. Run 'make dev'."
-
-node_modules: package.json
-	npm install
-	@touch node_modules
 
 .env:
 	@cp .env.example .env
 	@echo "Created .env from .env.example"
 
-.PHONY: reinstall
-reinstall: ## Wipe node_modules and reinstall from scratch
-	rm -rf node_modules package-lock.json
-	npm install
+$(JAR): pom.xml $(shell find src/main -type f)
+	./mvnw -q -B package -DskipTests
+
+.PHONY: build
+build: $(JAR) ## Build the executable jar
 
 # ---- running ---------------------------------------------------------------
 
 .PHONY: dev
-dev: setup ## Run the API with auto-reload (Ctrl-C to stop)
-	npm run dev
+dev: setup ## Run from source (Ctrl-C to stop)
+	./mvnw -q spring-boot:run
 
 .PHONY: start
-start: setup ## Run the API without auto-reload
-	npm start
+start: setup $(JAR) ## Run the built jar
+	java -jar $(JAR)
 
 .PHONY: stop
 stop: ## Kill whatever is listening on PORT
 	@lsof -ti:$(PORT) | xargs -r kill 2>/dev/null && echo "Stopped." || echo "Nothing on port $(PORT)."
 
+.PHONY: gtfs
+gtfs: $(JAR) ## Rebuild the static GTFS store from the newest published feed
+	java -jar $(JAR) --ingest
+
 # ---- testing ---------------------------------------------------------------
 
 .PHONY: test
-test: node_modules ## Run the unit tests
-	npm test
-
-.PHONY: gtfs
-gtfs: node_modules ## Rebuild the static GTFS store from the newest published feed
-	npm run gtfs:refresh
+test: ## Run the unit and integration tests
+	./mvnw -B test
 
 .PHONY: postman
 postman: ## Run the Postman collection headlessly (needs a running server)
@@ -87,6 +85,11 @@ postman: ## Run the Postman collection headlessly (needs a running server)
 		--env-var line=$(LINE) \
 		--env-var directionId=$(DIRECTION) \
 		--reporters cli --reporter-cli-no-banner
+
+.PHONY: parity
+parity: ## Compare two running servers endpoint by endpoint: make parity REF=... NEW=...
+	@test -n "$(REF)" -a -n "$(NEW)" || (echo 'Usage: make parity REF=http://127.0.0.1:8000 NEW=http://127.0.0.1:8001'; exit 1)
+	python3 scripts/parity.py $(REF) $(NEW)
 
 .PHONY: smoke
 smoke: ## Hit every endpoint against a running server and print status codes
@@ -139,7 +142,7 @@ watch-board: ## Refresh the board every 30s, like the real display would
 .PHONY: geocode
 geocode: ## Turn an address into coordinates: make geocode ADDRESS="Rua ..., Porto"
 	@test -n "$(ADDRESS)" || (echo 'Usage: make geocode ADDRESS="Rua de ..., Porto"'; exit 1)
-	@node scripts/geocode.js "$(ADDRESS)"
+	@java scripts/Geocode.java "$(ADDRESS)"
 
 .PHONY: realtime
 realtime: ## Live board for STOP
