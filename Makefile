@@ -38,7 +38,6 @@ help: ## Show this help
 
 .PHONY: setup
 setup: .env ## Create .env from .env.example
-	@echo "Ready. Run 'make dev'."
 
 .env:
 	@cp .env.example .env
@@ -54,6 +53,7 @@ build: $(JAR) ## Build the executable jar
 
 .PHONY: dev
 dev: setup ## Run from source (Ctrl-C to stop)
+	@echo "Compiling and starting on port $(PORT) (the first run downloads dependencies)..."
 	./mvnw -q spring-boot:run
 
 .PHONY: start
