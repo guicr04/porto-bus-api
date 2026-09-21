@@ -4,3 +4,9 @@
 # The static GTFS store — a derived artifact, rebuilt by `make gtfs`.
 data/
 target/
+
+# Editor state (VS Code's Makefile extension writes its caches here).
+.vscode/
+
+# Left over from the Node version; safe to delete.
+node_modules/
