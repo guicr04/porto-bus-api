@@ -1,8 +1,9 @@
 # Porto Bus API
 
 A personal wrapper API around Porto's **STCP** (Sociedade de Transportes Colectivos
-do Porto) bus system. Built in **Node.js + Express (plain JavaScript)**, with
-type-only `.d.ts` domain files as the shared data contract.
+do Porto) bus system. Built in **Java 25 + Spring Boot 4**. The data contract
+is the set of records in `pt.porto.bus.model`, published as OpenAPI at
+`/v3/api-docs` (browsable at `/swagger-ui.html`).
 
 It sits on two data sources: the **official static GTFS feed** and **STCP's own
 public JSON API** (the one their website calls for live arrivals).
@@ -11,15 +12,53 @@ This README doubles as the project's knowledge base.
 
 ---
 
-## 1. Why Node + JS (and where Python might come back)
-The frontend and future services are JavaScript, so the backend is too: one
-language, one toolchain, copy-paste-able fetch calls, shared types. Right now this
-is "just a clean API to consume," which is a thin proxy over STCP's JSON — Node does
-that as well as anything.
+## 1. Why Java + Spring Boot (and where Python might come back)
+This started as Node + Express, on the theory that the frontend would be
+JavaScript too and one language beat two. The frontend turned out to be a Swift
+iOS app, which consumes JSON and shares nothing with a `.d.ts`, so that argument
+went away. In September 2026 the API was rewritten in Java 25 on Spring Boot 4:
+a typed contract checked by the compiler instead of by JSDoc in an editor, a
+SQLite driver without a runtime flag (§2a), and a mainstream stack to grow on.
 
-Types live in `types/*.d.ts` (declaration-only, no runtime cost). JS files reference
-them through JSDoc, so VS Code type-checks the code with **no build step**. A future
-JS/TS frontend can import the same `.d.ts` as its contract.
+**The HTTP contract did not change.** Same paths, same query parameters, same
+snake_case JSON with nulls present, same `{"detail": ...}` errors, same
+live-first / store-as-fallback behaviour. That was verified rather than
+assumed: `scripts/parity.py` ran both implementations side by side against the
+same store and compared 41 endpoints, once with stcp.pt reachable and once with
+it unreachable, so every fallback branch was exercised too. No differences, so
+nothing a client decodes has moved.
+
+A handful of deliberate differences, all corrections or additions:
+
+- **"Today" is Lisbon's date everywhere.** The Node version defaulted the
+  `date` of `/services` calls to the UTC date, and judged feed expiry by the
+  host's date; between midnight and 01:00 in summer both named the wrong day.
+- **Unknown paths and wrong methods** answer with the same `{"detail"}` JSON as
+  every other error (404 / 405) rather than Express's HTML page.
+- **Transport errors say what happened** ("could not connect to stcp.pt",
+  "stcp.pt timed out") instead of Node's "fetch failed". The status codes are
+  unchanged.
+- **The running server refreshes a stale store hourly**, in addition to at boot
+  and on demand (§2a).
+
+How the code is laid out:
+
+- **Spring MVC on virtual threads**, not WebFlux. The board fans out a dozen
+  upstream calls at once; with virtual threads that is a `CompletableFuture`
+  per stop and blocking code everywhere else, not a reactive rewrite.
+- **Packages by feature** (`stops`, `lines`, `trips`, `departures`, `board`)
+  over shared infrastructure (`stcp` for the upstream client, `gtfs` for the
+  store, `live` for the fallback seam). The logic that is easy to get subtly
+  wrong — the departure merge, board assembly and rendering, walking model,
+  line ordering, Lisbon time — is plain Java with no Spring in it, and tested
+  that way.
+- **JDBC, not JPA.** The store's queries are hand-shaped for SQLite
+  (`WITHOUT ROWID`, an escaped `LIKE`, a bounding-box index) and ingest is 850k
+  batched inserts in one transaction. An ORM would get in the way of both.
+- **The circuit breaker is forty lines, not Resilience4j.** Its behaviour is
+  specific — consecutive outages only, 404s ignored, one probe after the
+  cooldown, and `consecutive_failures` reported on `/health` — and configuring a
+  library to approximate that would be longer than writing it.
 
 > If heavy schedule/delay **data analysis** ever shows up, that's Python's turf —
 > spin it up as a *separate* service that consumes the GTFS feed. Split by job, not
@@ -33,7 +72,7 @@ Porto's open-data portal publishes STCP's timetable data in **GTFS** format.
 
 > **The feed URL is not stable.** The portal publishes a *new resource with a new
 > UUID* every few days (55+ and counting, most named `gtfs_feed.zip`), and older
-> ones eventually 404. So we don't hardcode a URL: `gtfs.js` asks the portal's
+> ones eventually 404. So we don't hardcode a URL: `GtfsIngest` asks the portal's
 > CKAN API (`/api/3/action/package_show`) for the dataset, sorts the zip resources
 > by `last_modified`, and downloads the newest. Set `GTFS_URL` only to pin a
 > specific feed or point at a local copy. Verified: a pinned URL had already gone
@@ -108,7 +147,7 @@ GTFS used to be parsed into two in-memory `Map`s (stops + routes) on the first
 request after a one-week TTL. That was fine while those were the only two files
 we read. It stopped being fine for three reasons:
 
-1. **Nothing survived a restart.** Every deploy, crash or `npm start` re-paid a
+1. **Nothing survived a restart.** Every deploy, crash or restart re-paid a
    7 MB download and a full parse on whichever request arrived first.
 2. **The refresh sat on the request path.** A rider's board waited on the
    portal, with a timeout of `httpTimeoutMs * 3`.
@@ -118,19 +157,18 @@ we read. It stopped being fine for three reasons:
 So the static half of the data now lives in a **SQLite file**, built by a
 standalone ingest and read by everything else.
 
-### Driver: `node:sqlite`, and the flag it needs
+### Driver: sqlite-jdbc
 
-**Running this requires Node 22.5+ and `--experimental-sqlite`**, which is baked
-into the npm scripts (`start`, `dev`, `test`, `gtfs:refresh`). Run `node
-src/index.js` directly and it will fail on the import.
+`org.xerial:sqlite-jdbc`, behind a small Hikari pool, read through Spring's
+`JdbcClient`. The jar bundles the native library for macOS arm64 and Linux, so
+there is no build step and nothing to install. WAL mode, `synchronous=NORMAL`
+and a busy timeout are set on the connection URL (`DataSourceConfig`).
 
-That was not the first choice. better-sqlite3 is the more established option and
-was installed first, but its darwin-arm64 prebuild **segfaults on open** here
-(Node 22.12, `NODE_MODULE_VERSION` 127), and `npm rebuild --build-from-source`
-silently reuses the same prebuild rather than compiling. Depending on a native
-build that has to work on a dev Mac *and* in the container, to get an API the
-runtime already ships, is a bad trade. The flag is the price; it goes away on
-Node 24, where `node:sqlite` is unflagged.
+History worth keeping: the Node version first tried better-sqlite3, whose
+darwin-arm64 prebuild segfaulted on open, and settled on `node:sqlite` at the
+price of an `--experimental-sqlite` flag on every command. The Java driver has
+neither problem. The database file format is untouched, so a store built by
+either version is readable by the other.
 
 ### Why SQLite and not Postgres
 
@@ -138,10 +176,10 @@ It's a file: no second container, no connection string, no ops. The data is
 written once a day and read constantly, which is precisely what SQLite is best
 at, and a bounding-box query over an index is all the "geospatial" the map
 needs. Postgres/PostGIS becomes right the day this API runs as more than one
-instance — and that migration stays cheap because **`clients/gtfs.js` keeps its
-exported surface unchanged** (`getStops`, `getStop`, `getLines`, `getLine`).
-Everything above it already goes through those four functions, so the storage
-swap is a change to one file, twice.
+instance — and that migration stays cheap because **every read goes through the
+`gtfs` package** (`GtfsStore`, `ScheduleStore`, `LineStore`, `TripResolver`) and
+the ingest (`GtfsIngest`). Nothing above it writes SQL, so the storage swap is a
+change to one package.
 
 ### What's actually in the feed
 
@@ -176,7 +214,7 @@ days ago" instead of quietly returning nothing.
 
 ### Schema
 
-`src/db/schema.sql`. The decisions inside it:
+`src/main/resources/schema.sql`, applied at startup. The decisions inside it:
 
 - **`stop_code` is the key; there is no separate `stop_id` column.** Verified
   across all 2,569 rows of the current feed: they are identical. The API and its
@@ -211,11 +249,14 @@ days ago" instead of quietly returning nothing.
 
 ### Ingest and refresh
 
-`scripts/gtfs-refresh.js` — standalone, and the only thing that writes:
+`GtfsIngest` is the only thing that writes. Run it standalone with:
 
 ```bash
-npm run gtfs:refresh          # or: make gtfs
+make gtfs          # java -jar target/porto-bus-api.jar --ingest
 ```
+
+`--ingest` starts no web server, prints row counts, and exits non-zero on
+failure, which is what cron wants.
 
 - It **replaces the contents in a single transaction** (`BEGIN; DELETE; INSERT;
   COMMIT;`) rather than swapping files. SQLite gives atomicity for free and, in
@@ -225,9 +266,12 @@ npm run gtfs:refresh          # or: make gtfs
 - **The server also runs it at boot** when the database is missing or older than
   `GTFS_TTL_SECONDS` (now one day). This is deliberate: a fresh clone with no
   scheduler configured must still work, and dev must not require a cron.
-- **Cron is therefore pure optimisation** — a daily `npm run gtfs:refresh` keeps
-  the refresh off both the boot path and the request path. Nothing breaks
-  without it.
+- **While running, the server checks hourly** and refreshes a store that has
+  passed its TTL, off the request path. A refresh already in progress is never
+  doubled up.
+- **Cron is therefore pure optimisation** — a daily `make gtfs` keeps the
+  refresh off the server entirely (set `SCHEDULED_REFRESH=false`). Nothing
+  breaks without it.
 - `feed_meta` records the resource name, source URL, feed version, validity
   window and ingest timestamp. `/health` surfaces them, so "is my data stale?"
   is a check rather than a guess.
@@ -264,7 +308,7 @@ miss, return the stop list without times. Never fabricate one. `/trips/{trip_id}
 ### Live-first, with the store as the fallback
 
 Before this, **every time-related answer in the system was an upstream call** —
-including the one named "scheduled fallback". `services/departures.js` makes
+including the one named "scheduled fallback". The departures service made
 four STCP calls and zero GTFS calls; the scheduled half was a fallback against
 *one bus not being tracked*, never against STCP being unavailable. The practical
 effect was that if STCP went down, every screen in the app went blank at once.
@@ -324,50 +368,37 @@ Three rules keep the degradation honest:
 ## 3. Project structure
 ```
 porto-bus-api/
-  package.json
-  Makefile               # setup / dev / test / smoke / postman
-  jsconfig.json          # turns on JSDoc type-checking in the editor
+  pom.xml                  # Spring Boot 4.1, Java 25
+  mvnw                     # Maven wrapper: no local Maven needed
+  Makefile                 # setup / dev / test / gtfs / smoke / parity / board
+  Dockerfile
   .env.example
   postman/
     porto-bus-api.postman_collection.json
-  test/
-    combine.test.js      # the merge logic, incl. the dedup edge cases
-    board.test.js        # walking model + "can I still catch it"
-    gtfs-store.test.js   # ingest against a small fixture feed, and the store reads
-    trips.test.js        # the live trip_id join and its fallbacks
-  types/
-    domain.d.ts          # the shared type contract (Arrival, StopSchedule, ...)
-  src/
-    index.js             # Express app + server
-    config.js            # env loading
-    clients/
-      stcp.js            # stop-centric API: realtime, routes, services, schedule
-      route.js           # line-centric API: stops, shape, services, schedule
-      gtfs.js            # static data, read from the SQLite store (§2a)
-    lib/
-      http.js            # shared fetch helper + query encoder
-      cache.js           # tiny TTL cache (keeps the display off stcp.pt's back)
-      geo.js             # haversine + the walking model
-      board.js           # pure board assembly + fixed-width renderer
-      parse.js           # raw payload -> domain types (validated mappers)
-      csv.js             # tiny RFC-4180 CSV parser for GTFS
-      time.js            # Europe/Lisbon time helpers (after-midnight aware)
-      combine.js         # pure merge of live + scheduled departures
-    services/
-      departures.js      # orchestrates the combined /departures view
-      board.js           # nearby stops -> one board
-    routes/
-      stops.js           # /stops/* endpoints
-      lines.js           # /lines/*
-      trips.js           # /trips/{trip_id}/stops — one live bus's journey
-      board.js           # /board and /board.txt
-    db/
-      schema.sql         # the static store's tables (§2a)
-      index.js           # open the DB, set pragmas, WAL
-      trips.js           # live trip_id -> a trip in the store, and its stops
   scripts/
-    geocode.js           # address -> coordinates, run once at setup
-    gtfs-refresh.js      # download the feed -> SQLite; daily, and at boot if stale
+    Geocode.java           # address -> coordinates, run once at setup (§4b)
+    parity.py              # compare two running instances endpoint by endpoint
+  src/main/resources/
+    application.yml        # every setting, bound to the env var names in .env.example
+    schema.sql             # the static store's tables (§2a)
+  src/main/java/pt/porto/bus/
+    PortoBusApplication.java   # the server, or `--ingest` to rebuild the store and exit
+    model/                 # the HTTP contract: one record per response type
+    shared/                # config, errors, Lisbon time, walking model, line order,
+                           #   URL encoding (%20, never +)
+    stcp/                  # stcp.pt client (stop- and line-centric) + payload parsers
+    gtfs/                  # the SQLite store: ingest, refresh, reads, trip resolution
+    live/                  # live-first seam with the store behind it + circuit breaker
+    stops/                 # /stops/*
+    lines/                 # /lines/*
+    trips/                 # /trips/{trip_id}/stops — one live bus's journey
+    departures/            # combined live + scheduled; the merge itself is pure
+    board/                 # /board, /board.txt; assembly and rendering are pure
+    health/                # /health
+  src/test/java/pt/porto/bus/
+    api/                   # the HTTP contract end to end, against a fake stcp.pt
+    gtfs/                  # ingest guarantees, store reads, trip id join + fallbacks
+    departures/ board/ shared/ stcp/ live/   # the pure logic, rule by rule
 ```
 
 ## 4. Endpoints (v0)
@@ -631,7 +662,7 @@ endpoint we have no agreement to use.
 - **`/board.txt`** — fixed-width `text/plain`, for a microcontroller with no JSON
   parser. `?width=42&title=BEDROOM&color=1`. Line, destination, ETA.
 
-Rendering is separate from assembly (`lib/board.js`), so a future LED/e-ink/app
+Rendering is separate from assembly (`BoardRenderer` vs `BoardAssembler`), so a future LED/e-ink/app
 frontend can take either.
 
 ### Where this goes next
@@ -641,41 +672,44 @@ transfers. This board is the display half of that, and the natural next step is 
 `/journey?to=` endpoint that reuses the same walking model and renders to the same
 display.
 
-Kept in this API rather than split into its own service: it needs the in-memory GTFS
+Kept in this API rather than split into its own service: it needs the GTFS
 stop list and the realtime client, both already here — a separate service would
 duplicate them and add a network hop for no gain. It *is* cleanly separable
-(`lib/geo.js`, `lib/board.js`, `services/board.js`, `routes/board.js`), so extracting
+(`shared/Geo` and the `board` package), so extracting
 it later is a move, not a rewrite. The hardware is the separate thing.
 
 ## 5. Running it
 
-> **Requires Node 22.5+.** The store uses `node:sqlite`, which needs
-> `--experimental-sqlite` on the Node 22 line; every npm script already passes
-> it. `npm start` works, `node src/index.js` does not. See §2a.
+> **Requires a JDK 25.** Maven comes with the project (`./mvnw`).
 >
-> The API listens on **all interfaces**, despite the startup line printing
-> `127.0.0.1` — verified by reaching it on the Mac's LAN address. A phone on the
-> same Wi-Fi needs no code change, just `http://<mac-lan-ip>:8000`.
+> The API listens on **all interfaces**. A phone on the same Wi-Fi needs no code
+> change, just `http://<mac-lan-ip>:8000`.
 
 ```bash
 cd porto-bus-api
-npm install
 cp .env.example .env
-npm run dev      # or: npm start
-npm test         # merge logic (node:test, no deps)
+./mvnw spring-boot:run            # from source; or:
+./mvnw package && java -jar target/porto-bus-api.jar
+./mvnw test                       # unit + HTTP integration tests
 ```
+
+The first start on a fresh clone downloads and ingests the GTFS feed before it
+accepts traffic (a few seconds); after that the store persists in `data/`.
 
 Or via `make` (run `make` on its own for the full list):
 
 | Command | What it does |
 |---------|--------------|
-| `make setup`    | install dependencies and create `.env` |
-| `make dev`      | run with auto-reload (implies `setup`) |
-| `make start`    | run without auto-reload |
+| `make setup`    | create `.env` |
+| `make dev`      | run from source |
+| `make build`    | build the executable jar |
+| `make start`    | run the built jar |
 | `make stop`     | kill whatever holds the port |
-| `make test`     | unit tests |
+| `make test`     | unit and integration tests |
+| `make gtfs`     | rebuild the static store from the newest feed, then exit |
 | `make smoke`    | curl every endpoint, print status codes |
 | `make postman`  | run the Postman collection headlessly via newman |
+| `make parity REF=... NEW=...` | compare two running servers endpoint by endpoint |
 | `make board`    | the departure board, as the display shows it |
 | `make watch-board` | refresh it every 30s, like the real device |
 | `make geocode ADDRESS="..."` | turn an address into HOME_LAT/HOME_LON |
@@ -683,17 +717,17 @@ Or via `make` (run `make` on its own for the full list):
 
 Override the defaults inline: `make departures STOP=BOLH LINE=200`.
 Server: http://127.0.0.1:8000  — try `/health`, then `/stops`, then `/stops/CMO/realtime`.
+The generated OpenAPI description is at `/v3/api-docs`.
 
-All 13 endpoints were verified against the live upstream on 2026-07-19 and return
-the shapes documented here.
+In a container: `docker build -t porto-bus-api .` and run it with a volume on
+`/data`, so a restart doesn't re-download the feed.
 
-Requires Node 18+ (uses native `fetch`). If stcp.pt blocks a plain client, set a
-browser-like `USER_AGENT` in `.env`.
+If stcp.pt blocks a plain client, set a browser-like `USER_AGENT` in `.env`.
 
 ## 5a. Postman
 
 `postman/porto-bus-api.postman_collection.json` — import it into Postman
-(*Import → File*). 23 requests across **Health**, **Stops**, **Lines** and
+(*Import → File*). 29 requests across **Health**, **Stops**, **Lines** and
 **Error cases**, covering every endpoint and every parameter combination, plus the
 400/404/502 paths so you can tell a bug from expected behaviour.
 
@@ -709,13 +743,13 @@ schedule ones so a top-to-bottom run just works.
 Requests also assert on behaviour, not just status codes: departures must be sorted,
 never in the past, tagged with a `source`, rendered in a single colour, and free of
 buses that duplicate their own timetable slot. Run headlessly with `make postman`
-(23 requests / 76 assertions, all green as of 2026-07-19).
+(29 requests / 100 assertions, all green against the Java server on 2026-09-16).
 
 ## 6. Roadmap
 - [x] Line-centric endpoints: `/lines/{line}/stops`, `/shape`, `/services`, `/schedule` (done).
 - [x] Combined live + scheduled departures (`/stops/{code}/departures?line=`), each tagged by source.
 - [x] Verified every endpoint against the live API; auto-resolve the GTFS feed.
-- [x] Tests for the merge logic (`test/combine.test.js`).
+- [x] Tests for the merge logic (`DepartureMergerTest`).
 - [x] Nearest-stops-to-me + departure board (`/board`, `/board.txt`).
 - [x] Short-TTL cache on live arrivals.
 - [x] `color`/`text_color` on `/lines`, from GTFS `route_color`/`route_text_color`.
@@ -741,6 +775,8 @@ buses that duplicate their own timetable slot. Run headlessly with `make postman
       identical to upstream, and the map pans against it (§2a).
 - [ ] Rate-limiting on top of the cache, to stay gentle on stcp.pt.
 - [ ] Small map UI (colored by route_color) — separate JS frontend consuming this API.
+- [x] Rewritten in Java 25 / Spring Boot 4 with the contract unchanged, proven
+      by a side-by-side parity run with stcp.pt up and down (§1).
 
 ## 7. Be a good citizen
 The `/api` endpoints are undocumented. Keep request rates low, cache, identify via

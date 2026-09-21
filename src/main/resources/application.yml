@@ -1,0 +1,52 @@
+# Every value reads the environment variable the Node version used, so an
+# existing .env keeps working unchanged. A local .env is imported as a
+# properties file (KEY=VALUE is the same syntax); real environment variables
+# still win over it.
+spring:
+  application:
+    name: porto-bus-api
+  config:
+    import: optional:file:.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  datasource:
+    # DataSourceConfig builds the URL (it needs to create the directory first).
+    hikari:
+      maximum-pool-size: 8
+      pool-name: gtfs-store
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+server:
+  port: ${PORT:8000}
+  tomcat:
+    # Trip ids and service ids are full of pipes. Express accepted them raw, so
+    # a client that forgets to percent-encode one must not start getting 400s.
+    relaxed-path-chars: "|"
+    relaxed-query-chars: "|"
+
+app:
+  gtfs-url: ${GTFS_URL:}
+  gtfs-portal-base: ${GTFS_PORTAL_BASE:https://opendata.porto.digital}
+  gtfs-dataset-id: ${GTFS_DATASET_ID:horarios-paragens-e-rotas-em-formato-gtfs-stcp}
+  gtfs-ttl-seconds: ${GTFS_TTL_SECONDS:86400}
+  db-path: ${DB_PATH:data/gtfs.db}
+  stcp-api-base: ${STCP_API_BASE:https://stcp.pt/api}
+  home-lat: ${HOME_LAT:}
+  home-lon: ${HOME_LON:}
+  home-label: ${HOME_LABEL:HOME}
+  realtime-ttl-ms: ${REALTIME_TTL_MS:15000}
+  user-agent: ${USER_AGENT:porto-bus-api/0.2 (personal project)}
+  http-timeout-ms: ${HTTP_TIMEOUT_MS:10000}
+  boot-refresh: ${BOOT_REFRESH:true}
+  scheduled-refresh: ${SCHEDULED_REFRESH:true}
+
+logging:
+  level:
+    # Hikari and Tomcat are chatty at INFO for a single-user API.
+    com.zaxxer.hikari: WARN

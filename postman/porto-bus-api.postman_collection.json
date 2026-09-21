@@ -660,7 +660,7 @@
                   "pm.test('returns lines with a route_id', () => {",
                   "    const body = pm.response.json();",
                   "    pm.expect(body).to.be.an('array').that.is.not.empty;",
-                  "    pm.expect(body[0]).to.have.all.keys('line', 'description', 'route_id');",
+                  "    pm.expect(body[0]).to.have.all.keys('line', 'description', 'route_id', 'color', 'text_color');",
                   "});"
                 ]
               }

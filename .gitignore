@@ -1,7 +1,6 @@
-node_modules/
 .env
 *.zip
-npm-debug.log*
 
-# The static GTFS store — a derived artifact, rebuilt by `npm run gtfs:refresh`.
+# The static GTFS store — a derived artifact, rebuilt by `make gtfs`.
 data/
+target/
